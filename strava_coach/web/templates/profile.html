@@ -27,10 +27,10 @@
       <div class="trend-box"><span class="sync-label">평균 페이스</span><div class="sync-canvas"><canvas id="mPace"></canvas></div></div>
     </div>
     <table>
-      <thead><tr><th>월</th><th>세션</th><th>누적거리</th><th>평균페이스</th><th>평균HR</th></tr></thead>
+      <thead><tr><th>월</th><th>세션</th><th>누적거리</th><th>최장런</th><th>평균페이스</th><th>최고페이스</th><th>평균HR</th><th>최대HR</th></tr></thead>
       <tbody>
         {% for m in monthly %}
-        <tr><td>{{ m.label }}</td><td>{{ m.sessions }}</td><td>{{ m.total_km }} km</td><td>{{ m.avg_pace_str }}</td><td>{{ m.avg_hr or '—' }}</td></tr>
+        <tr><td>{{ m.label }}</td><td>{{ m.sessions }}</td><td>{{ m.total_km }} km</td><td>{{ m.longest_km }} km</td><td>{{ m.avg_pace_str }}</td><td>{{ m.best_pace_str }}</td><td>{{ m.avg_hr or '—' }}</td><td>{{ m.max_hr or '—' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -102,12 +102,17 @@
         data: { labels, datasets: [{ data: MT.map(m => m.total_km), backgroundColor: '#fc4c02' }] },
         options: noAsp({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.parsed.y + ' km' } } },
           scales: { y: { beginAtZero: true } } }) });
+      const legendBottom = { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } };
       if (document.getElementById('mHr')) new Chart(mHr, { type: 'line',
-        data: { labels, datasets: [{ data: MT.map(m => m.avg_hr), borderColor: '#d92b2b', backgroundColor: 'rgba(217,43,43,.1)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: true }] },
-        options: noAsp({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.parsed.y + ' bpm' } } } }) });
+        data: { labels, datasets: [
+          { label: '평균', data: MT.map(m => m.avg_hr), borderColor: '#d92b2b', backgroundColor: 'rgba(217,43,43,.1)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: true },
+          { label: '최대', data: MT.map(m => m.max_hr), borderColor: '#7a1018', borderDash: [5, 4], fill: false, tension: 0.3, pointRadius: 4, spanGaps: true } ] },
+        options: noAsp({ plugins: { legend: legendBottom, tooltip: { callbacks: { label: c => c.dataset.label + ' ' + c.parsed.y + ' bpm' } } } }) });
       if (document.getElementById('mPace')) new Chart(mPace, { type: 'line',
-        data: { labels, datasets: [{ data: MT.map(m => m.avg_pace_sec), borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,.1)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: true }] },
-        options: noAsp({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => paceFmt(c.parsed.y) + '/km' } } },
+        data: { labels, datasets: [
+          { label: '평균', data: MT.map(m => m.avg_pace_sec), borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,.1)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: true },
+          { label: '최고', data: MT.map(m => m.best_pace_sec), borderColor: '#0c5b30', borderDash: [5, 4], fill: false, tension: 0.3, pointRadius: 4, spanGaps: true } ] },
+        options: noAsp({ plugins: { legend: legendBottom, tooltip: { callbacks: { label: c => c.dataset.label + ' ' + paceFmt(c.parsed.y) + '/km' } } },
           scales: { y: { reverse: true, ticks: { callback: paceFmt } } } }) });
     }
   </script>

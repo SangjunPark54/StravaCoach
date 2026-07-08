@@ -88,6 +88,7 @@ def summarize_activities(conn: sqlite3.Connection, activities: list[sqlite3.Row]
                 "avg_pace": avg_pace,
                 "avg_pace_str": format_pace(avg_pace),
                 "avg_hr": a["average_heartrate"],
+                "max_hr": a["max_heartrate"],
                 "hr_zone": hr_zone(a["average_heartrate"]),
                 "type": classify_session(a, laps),
                 "lap_count": len(laps),
@@ -420,15 +421,25 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
         if not s["date"]:
             continue
         m = s["date"][:7]
-        b = buckets.setdefault(m, {"km": 0.0, "time": 0.0, "hr_wsum": 0.0, "hr_w": 0.0, "n": 0})
+        b = buckets.setdefault(
+            m,
+            {"km": 0.0, "time": 0.0, "hr_wsum": 0.0, "hr_w": 0.0, "n": 0,
+             "max_hr": None, "best_pace": None, "longest": 0.0},
+        )
         km = s["distance_km"] or 0
         b["km"] += km
         b["n"] += 1
+        b["longest"] = max(b["longest"], km)
         if s["avg_pace"] and km:
             b["time"] += s["avg_pace"] * km  # 총 시간(초) = 페이스 * 거리
+            # 최고(가장 빠른) 페이스: 2km 이상 러닝만 후보(짧은 구간 노이즈 제외)
+            if km >= 2 and (b["best_pace"] is None or s["avg_pace"] < b["best_pace"]):
+                b["best_pace"] = s["avg_pace"]
         if s["avg_hr"] and km:
             b["hr_wsum"] += s["avg_hr"] * km  # 거리 가중 HR
             b["hr_w"] += km
+        if s.get("max_hr"):
+            b["max_hr"] = max(b["max_hr"] or 0, s["max_hr"])
 
     out = []
     for m in sorted(buckets):
@@ -440,10 +451,14 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
                 "month": m,
                 "label": f"{int(m[5:7])}월",
                 "total_km": round(b["km"], 1),
+                "longest_km": round(b["longest"], 1),
                 "sessions": b["n"],
                 "avg_pace_sec": round(avg_pace) if avg_pace else None,
                 "avg_pace_str": format_pace(avg_pace),
+                "best_pace_sec": round(b["best_pace"]) if b["best_pace"] else None,
+                "best_pace_str": format_pace(b["best_pace"]),
                 "avg_hr": round(avg_hr, 1) if avg_hr else None,
+                "max_hr": round(b["max_hr"]) if b["max_hr"] else None,
             }
         )
     return out
