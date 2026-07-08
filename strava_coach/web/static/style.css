@@ -247,3 +247,11 @@ h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 
 @media (max-width: 380px) {
   .stat-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* --- 구간 그래프 높이 키움 --- */
+.sync-canvas { position: relative; height: 200px; margin-top: 4px; }
+.sync-canvas-alt { height: 150px; }
+@media (max-width: 640px) {
+  .sync-canvas { height: 170px; }
+  .sync-canvas-alt { height: 130px; }
+}

@@ -35,20 +35,36 @@ def _sessions() -> list[dict]:
 
 RANGE_DAYS = {"1w": 7, "1m": 30, "3m": 90, "6m": 180, "1y": 365, "all": None}
 RANGE_LABELS = [("1w", "1주일"), ("1m", "1달"), ("3m", "3달"), ("6m", "6달"), ("1y", "1년"), ("all", "전체")]
+_MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
+
+
+def _month_labels(sessions: list[dict]) -> list[tuple[str, str]]:
+    """데이터에 존재하는 월을 오름차순으로 (키, '7월') 라벨로."""
+    months = sorted({s["date"][:7] for s in sessions if s["date"]})
+    return [(m, f"{int(m[5:7])}월") for m in months]
+
+
+def _apply_range(sessions: list[dict], rng: str) -> list[dict]:
+    """rng: 1w/1m/3m/6m/1y/all(오늘 기준) 또는 'YYYY-MM'(해당 월)."""
+    if rng in RANGE_DAYS:
+        days = RANGE_DAYS[rng]
+        if days is None:
+            return sessions
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        return [s for s in sessions if s["date"] and s["date"] >= cutoff]
+    if _MONTH_RE.match(rng):
+        return [s for s in sessions if s["date"] and s["date"][:7] == rng]
+    return sessions
+
+
+def _range_options(sessions: list[dict]) -> list[tuple[str, str]]:
+    return RANGE_LABELS + _month_labels(sessions)
 
 
 @app.get("/")
 def dashboard(request: Request, range: str = "all"):
-    if range not in RANGE_DAYS:
-        range = "all"
     sessions = _sessions()
-
-    days = RANGE_DAYS[range]
-    if days is not None:
-        cutoff = (date.today() - timedelta(days=days)).isoformat()
-        filtered = [s for s in sessions if s["date"] and s["date"] >= cutoff]
-    else:
-        filtered = sessions
+    filtered = _apply_range(sessions, range)
 
     weekly = analysis.weekly_volume(filtered, weeks=52)
     total_km = round(sum(s["distance_km"] for s in filtered), 1)
@@ -61,18 +77,26 @@ def dashboard(request: Request, range: str = "all"):
             "total_count": len(filtered),
             "total_km": total_km,
             "range": range,
-            "range_labels": RANGE_LABELS,
+            "range_labels": _range_options(sessions),
         },
     )
 
 
 @app.get("/sessions")
-def sessions_view(request: Request):
+def sessions_view(request: Request, range: str = "all"):
     sessions = _sessions()
+    filtered = _apply_range(sessions, range)
+    total_km = round(sum(s["distance_km"] for s in filtered), 1)
     return templates.TemplateResponse(
         request,
         "sessions.html",
-        {"sessions": list(reversed(sessions))},
+        {
+            "sessions": list(reversed(filtered)),
+            "total_count": len(filtered),
+            "total_km": total_km,
+            "range": range,
+            "range_labels": _range_options(sessions),
+        },
     )
 
 

@@ -31,9 +31,9 @@
     <div class="chart-map-layout{% if not a.route %} nomap{% endif %}">
       <div class="chart-col">
         {% if a.chart_sync %}
-        {% if a.chart_sync.has_hr %}<div class="sync-chart"><span class="sync-label">심박 (bpm)</span><canvas id="hrChart" height="75"></canvas></div>{% endif %}
-        {% if a.chart_sync.has_pace %}<div class="sync-chart"><span class="sync-label">페이스</span><canvas id="paceChart" height="75"></canvas></div>{% endif %}
-        {% if a.chart_sync.has_alt %}<div class="sync-chart"><span class="sync-label">고도 (m)</span><canvas id="altChart" height="60"></canvas></div>{% endif %}
+        {% if a.chart_sync.has_hr %}<div class="sync-chart"><span class="sync-label">심박 (bpm)</span><div class="sync-canvas"><canvas id="hrChart"></canvas></div></div>{% endif %}
+        {% if a.chart_sync.has_pace %}<div class="sync-chart"><span class="sync-label">페이스</span><div class="sync-canvas"><canvas id="paceChart"></canvas></div></div>{% endif %}
+        {% if a.chart_sync.has_alt %}<div class="sync-chart"><span class="sync-label">고도 (m)</span><div class="sync-canvas sync-canvas-alt"><canvas id="altChart"></canvas></div></div>{% endif %}
         {% endif %}
       </div>
 
@@ -351,7 +351,7 @@
         }
       }
       const baseOpts = (yTitle, extra = {}) => Object.assign({
-        responsive: true, maintainAspectRatio: true,
+        responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: { legend: { display: false }, tooltip: { enabled: true } },
         onHover: (evt, els, chart) => {
