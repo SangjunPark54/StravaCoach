@@ -413,6 +413,42 @@ def weekly_volume(sessions: list[dict], weeks: int = 8) -> list[dict]:
     return [{"week": k, "distance_km": round(v, 1)} for k, v in ordered]
 
 
+def monthly_trends(sessions: list[dict]) -> list[dict]:
+    """월별 누적거리·평균HR·평균페이스(거리 가중)를 정리해 비교용으로 반환(오름차순)."""
+    buckets: dict[str, dict] = {}
+    for s in sessions:
+        if not s["date"]:
+            continue
+        m = s["date"][:7]
+        b = buckets.setdefault(m, {"km": 0.0, "time": 0.0, "hr_wsum": 0.0, "hr_w": 0.0, "n": 0})
+        km = s["distance_km"] or 0
+        b["km"] += km
+        b["n"] += 1
+        if s["avg_pace"] and km:
+            b["time"] += s["avg_pace"] * km  # 총 시간(초) = 페이스 * 거리
+        if s["avg_hr"] and km:
+            b["hr_wsum"] += s["avg_hr"] * km  # 거리 가중 HR
+            b["hr_w"] += km
+
+    out = []
+    for m in sorted(buckets):
+        b = buckets[m]
+        avg_pace = (b["time"] / b["km"]) if b["km"] else None
+        avg_hr = (b["hr_wsum"] / b["hr_w"]) if b["hr_w"] else None
+        out.append(
+            {
+                "month": m,
+                "label": f"{int(m[5:7])}월",
+                "total_km": round(b["km"], 1),
+                "sessions": b["n"],
+                "avg_pace_sec": round(avg_pace) if avg_pace else None,
+                "avg_pace_str": format_pace(avg_pace),
+                "avg_hr": round(avg_hr, 1) if avg_hr else None,
+            }
+        )
+    return out
+
+
 def race_predictions(sessions: list[dict], distances_km=(5, 10)) -> dict:
     """세션 기록 중 최고 성능을 기준으로 Riegel 공식으로 목표 거리 기록/페이스를 예측."""
     # 2km 이상, 페이스 있는 러닝만 예측 근거로 사용

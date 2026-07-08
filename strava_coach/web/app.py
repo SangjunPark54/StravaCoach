@@ -128,10 +128,12 @@ def _plan_context():
 @app.get("/profile")
 def profile_view(request: Request):
     conn = db.get_connection()
+    sessions = _sessions()
     profile = analysis.hr_profile(conn)
-    races = analysis.race_predictions(_sessions())
+    races = analysis.race_predictions(sessions)
+    monthly = analysis.monthly_trends(sessions)
     return templates.TemplateResponse(
-        request, "profile.html", {"profile": profile, "races": races}
+        request, "profile.html", {"profile": profile, "races": races, "monthly": monthly}
     )
 
 
