@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
-  <h1>심박 프로필 <span class="muted" style="font-size:0.9rem;font-weight:400;">— 전체 세션 데이터 집계</span></h1>
+  <h1>프로파일 <span class="muted" style="font-size:0.9rem;font-weight:400;">— 전체 세션 데이터 집계</span></h1>
   <p class="muted">누적 심박 기록 시간 {{ profile.total_time_str }}{% if profile.hr_max_observed %} · 관측 최대심박 {{ profile.hr_max_observed }} bpm{% endif %}</p>
 
   {% if races.predictions %}
