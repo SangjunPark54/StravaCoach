@@ -10,6 +10,7 @@ nav {
   display: flex;
   gap: 1rem;
   align-items: center;
+  flex-wrap: wrap;
   margin-bottom: 2rem;
   border-bottom: 1px solid #ddd;
   padding-bottom: 0.75rem;
@@ -215,3 +216,34 @@ section a { color: #fc4c02; }
 .goal-fill { position: absolute; top: 0; bottom: 0; }
 .goal-fill.goal-fast { left: 50%; background: #1f9d55; border-radius: 0 6px 6px 0; }
 .goal-fill.goal-slow { right: 50%; background: #e0503a; border-radius: 6px 0 0 6px; }
+
+/* ============ 모바일 반응형 ============ */
+* { box-sizing: border-box; }
+h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 억지 줄바꿈 방지 */
+
+@media (max-width: 640px) {
+  body { margin: 1rem auto; padding: 0 0.75rem; font-size: 15px; }
+  nav { gap: 0.6rem 0.9rem; margin-bottom: 1.2rem; }
+  nav form { margin-left: 0; }              /* 좁으면 버튼 줄바꿈되게 */
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; }
+
+  /* 넓은 표는 가로 스크롤 */
+  table { display: block; width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+
+  /* 그래프↔지도 세로 정렬, 지도 sticky 해제 */
+  .chart-map-layout { grid-template-columns: 1fr; }
+  .map-col { position: static; }
+  .map-col .map-wrap { height: 320px; }
+
+  /* 상단 수치/HUD 줄바꿈 */
+  .chart-readout { gap: 0.5rem 1rem; font-size: 0.9rem; }
+  .stat-grid { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 0.5rem; }
+  .goal-form { gap: 0.75rem; }
+  .goal-bar { width: 100px; }
+}
+
+/* 아주 좁은 화면(소형폰) */
+@media (max-width: 380px) {
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}
