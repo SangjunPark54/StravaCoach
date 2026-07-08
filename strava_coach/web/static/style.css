@@ -255,3 +255,16 @@ h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 
   .sync-canvas { height: 170px; }
   .sync-canvas-alt { height: 130px; }
 }
+
+/* --- 월별 필터 접기/펼치기 --- */
+.month-filter { position: relative; display: inline-block; }
+.month-filter > summary { list-style: none; cursor: pointer; user-select: none; }
+.month-filter > summary::-webkit-details-marker { display: none; }
+.month-filter[open] > summary.month-summary { background: #333; color: #fff; border-color: #333; }
+.month-btns {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 500;
+  display: flex; flex-wrap: wrap; gap: 0.4rem; max-width: 320px;
+  background: #fff; border: 1px solid #ddd; border-radius: 10px;
+  padding: 0.6rem; box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+}
+@media (max-width: 640px) { .month-btns { max-width: 90vw; } }

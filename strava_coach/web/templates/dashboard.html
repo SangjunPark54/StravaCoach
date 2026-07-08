@@ -2,11 +2,8 @@
 {% block content %}
   <h1>대시보드</h1>
 
-  <div class="range-filter">
-    {% for key, label in range_labels %}
-      <a href="/?range={{ key }}" class="range-btn {% if key == range %}active{% endif %}">{{ label }}</a>
-    {% endfor %}
-  </div>
+  {% set base = '/' %}
+  {% include "_filter.html" %}
 
   <section>
     <h2>주간 볼륨 (km)</h2>

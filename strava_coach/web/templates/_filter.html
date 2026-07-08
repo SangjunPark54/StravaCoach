@@ -1,0 +1,15 @@
+<div class="range-filter">
+  {% for key, label in range_labels %}
+    <a href="{{ base }}?range={{ key }}" class="range-btn {% if key == range %}active{% endif %}">{{ label }}</a>
+  {% endfor %}
+  {% if month_labels %}
+  <details class="month-filter"{% if range|length == 7 %} open{% endif %}>
+    <summary class="range-btn month-summary">월별 ▾</summary>
+    <div class="month-btns">
+      {% for key, label in month_labels %}
+        <a href="{{ base }}?range={{ key }}" class="range-btn {% if key == range %}active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+</div>

@@ -57,10 +57,6 @@ def _apply_range(sessions: list[dict], rng: str) -> list[dict]:
     return sessions
 
 
-def _range_options(sessions: list[dict]) -> list[tuple[str, str]]:
-    return RANGE_LABELS + _month_labels(sessions)
-
-
 @app.get("/")
 def dashboard(request: Request, range: str = "all"):
     sessions = _sessions()
@@ -77,7 +73,8 @@ def dashboard(request: Request, range: str = "all"):
             "total_count": len(filtered),
             "total_km": total_km,
             "range": range,
-            "range_labels": _range_options(sessions),
+            "range_labels": RANGE_LABELS,
+            "month_labels": _month_labels(sessions),
         },
     )
 
@@ -95,7 +92,8 @@ def sessions_view(request: Request, range: str = "all"):
             "total_count": len(filtered),
             "total_km": total_km,
             "range": range,
-            "range_labels": _range_options(sessions),
+            "range_labels": RANGE_LABELS,
+            "month_labels": _month_labels(sessions),
         },
     )
 

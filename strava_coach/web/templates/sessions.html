@@ -2,11 +2,8 @@
 {% block content %}
   <h1>세션 목록 <span class="muted" style="font-size:1rem;font-weight:400;">— {{ total_count }}건 · 누적 {{ total_km }}km</span></h1>
 
-  <div class="range-filter">
-    {% for key, label in range_labels %}
-      <a href="/sessions?range={{ key }}" class="range-btn {% if key == range %}active{% endif %}">{{ label }}</a>
-    {% endfor %}
-  </div>
+  {% set base = '/sessions' %}
+  {% include "_filter.html" %}
 
   <table>
     <thead>
