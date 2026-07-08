@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>대시보드</h1>
+
+  <div class="range-filter">
+    {% for key, label in range_labels %}
+      <a href="/?range={{ key }}" class="range-btn {% if key == range %}active{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <section>
+    <h2>주간 볼륨 (km)</h2>
+    <canvas id="volumeChart" height="80"></canvas>
+  </section>
+
+  <section>
+    <h2>세션 <span class="muted" style="font-size:1rem;font-weight:400;">— {{ total_count }}건 · 누적 {{ total_km }}km</span></h2>
+    <table>
+      <thead>
+        <tr><th>날짜</th><th>이름</th><th>거리(km)</th><th>페이스</th><th>평균HR</th><th>랩</th><th>타입</th></tr>
+      </thead>
+      <tbody>
+        {% for s in sessions %}
+        <tr>
+          <td><a href="/activity/{{ s.id }}">{{ s.date }}</a></td>
+          <td><a href="/activity/{{ s.id }}">{{ s.name }}</a></td>
+          <td>{{ s.distance_km }}</td>
+          <td>{{ s.avg_pace_str }}</td>
+          <td>{{ s.avg_hr or '-' }}</td>
+          <td>{{ s.lap_count }}</td>
+          <td><span class="tag tag-{{ s.type }}">{{ s.type }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const weekly = {{ weekly | tojson }};
+    new Chart(document.getElementById('volumeChart'), {
+      type: 'bar',
+      data: {
+        labels: weekly.map(w => w.week),
+        datasets: [{ label: '주간 거리(km)', data: weekly.map(w => w.distance_km), backgroundColor: '#fc4c02' }],
+      },
+      options: { scales: { y: { beginAtZero: true } } },
+    });
+  </script>
+{% endblock %}

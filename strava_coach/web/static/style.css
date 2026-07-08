@@ -1,0 +1,217 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  max-width: 900px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #1a1a1a;
+}
+
+nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.75rem;
+}
+
+nav a {
+  text-decoration: none;
+  color: #fc4c02;
+  font-weight: 600;
+}
+
+nav form {
+  margin-left: auto;
+}
+
+nav button {
+  background: #fc4c02;
+  color: white;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #eee;
+}
+
+.tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: white;
+  background: #888;
+}
+
+.tag-vo2 { background: #d92b2b; }
+.tag-threshold { background: #e08a00; }
+.tag-tempo { background: #cc7a00; }
+.tag-long_run { background: #2b6fd9; }
+.tag-easy { background: #4caf50; }
+
+.warning {
+  background: #fff3cd;
+  border: 1px solid #ffe08a;
+  padding: 0.75rem;
+  border-radius: 4px;
+}
+
+.commentary {
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+/* --- 활동 상세 --- */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+.stat {
+  background: #f7f7f7;
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+}
+.stat-label { font-size: 0.8rem; color: #888; }
+.stat-val { font-size: 1.3rem; font-weight: 700; margin-top: 0.2rem; }
+.muted { color: #999; font-size: 0.9rem; }
+
+.bar-cell { width: 30%; }
+.bar {
+  height: 10px;
+  background: #fc4c02;
+  border-radius: 5px;
+  min-width: 2px;
+}
+.zone {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: white;
+}
+.zone-Z1 { background: #8ab; }
+.zone-Z2 { background: #5b8; }
+.zone-Z3 { background: #eb0; color: #333; }
+.zone-Z4 { background: #e70; }
+.zone-Z5 { background: #d33; }
+
+section a { color: #fc4c02; }
+
+/* --- 기간 필터 --- */
+.range-filter { display: flex; gap: 0.5rem; margin: 1rem 0 1.5rem; flex-wrap: wrap; }
+.range-btn {
+  padding: 0.35rem 0.9rem;
+  border: 1px solid #ddd;
+  border-radius: 999px;
+  text-decoration: none;
+  color: #555;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.range-btn:hover { border-color: #fc4c02; color: #fc4c02; }
+.range-btn.active { background: #fc4c02; color: white; border-color: #fc4c02; }
+
+/* --- 재생(replay) --- */
+.map-wrap { position: relative; }
+.hud {
+  position: absolute; top: 12px; left: 12px; z-index: 1000;
+  background: rgba(20,20,20,0.82); color: #fff;
+  border-radius: 10px; padding: 0.6rem 0.9rem; min-width: 130px;
+  font-variant-numeric: tabular-nums; pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+}
+.hud-row { display: flex; justify-content: space-between; gap: 1rem; padding: 2px 0; }
+.hud-label { font-size: 0.75rem; color: #bbb; }
+.hud-val { font-size: 0.95rem; font-weight: 700; }
+.replay-controls { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.replay-btn {
+  background: #fc4c02; color: #fff; border: none;
+  padding: 0.45rem 1rem; border-radius: 6px; font-weight: 700; cursor: pointer;
+}
+.replay-btn.secondary { background: #666; }
+.speed-label { font-size: 0.85rem; color: #555; }
+#speedSel { margin-left: 0.3rem; }
+#scrub { flex: 1; min-width: 140px; accent-color: #fc4c02; }
+
+/* --- 목표/계획 --- */
+.goal-box { background: #fff7f3; border: 1px solid #ffd9c7; border-radius: 10px; padding: 1rem 1.25rem; }
+.goal-form { display: flex; gap: 1.25rem; align-items: flex-end; flex-wrap: wrap; }
+.goal-form label { display: flex; flex-direction: column; font-size: 0.85rem; color: #666; gap: 0.3rem; }
+.goal-form input { padding: 0.4rem 0.5rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; }
+.goal-form input[type=number] { width: 5rem; }
+.pace-input { display: flex; align-items: center; gap: 0.3rem; }
+.pace-input input { width: 3.2rem; text-align: center; }
+.goal-status { font-size: 1rem; margin-top: 0.75rem; padding: 0.6rem 0.9rem; background: #f7f7f7; border-radius: 8px; }
+.goal-status .ok { color: #2b7a2b; }
+.goal-status .gap { color: #d35400; }
+.commentary { line-height: 1.7; }
+.warning { color: #c0392b; font-weight: 600; }
+
+/* --- 지도 모드 전환 --- */
+.map-style-toggle {
+  position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+  display: flex; gap: 0; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+.map-style-toggle button {
+  border: none; background: rgba(255,255,255,0.92); color: #333;
+  padding: 0.4rem 0.8rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+}
+.map-style-toggle button.active { background: #fc4c02; color: #fff; }
+
+.tag-rest { background: #9aa; }
+
+/* --- 연동 구간 그래프 --- */
+.chart-readout {
+  display: flex; gap: 1.25rem; flex-wrap: wrap;
+  background: #f4f4f4; border-radius: 8px; padding: 0.6rem 1rem;
+  margin-bottom: 0.75rem; font-variant-numeric: tabular-nums; font-size: 0.95rem;
+}
+.chart-readout b { color: #888; font-weight: 600; margin-right: 0.3rem; font-size: 0.85rem; }
+.chart-readout .ro-hr span:last-child { color: #d92b2b; font-weight: 700; }
+.chart-readout .ro-pace span:last-child { color: #fc4c02; font-weight: 700; }
+.chart-readout .ro-alt span:last-child { color: #2b7a2b; font-weight: 700; }
+.sync-chart { margin-bottom: 0.5rem; }
+.sync-label { font-size: 0.8rem; color: #666; font-weight: 600; }
+
+/* --- 심박 프로필 --- */
+.pct-bar { position: relative; background: #eee; border-radius: 4px; height: 18px; min-width: 100px; }
+.pct-fill { height: 100%; border-radius: 4px; }
+.pct-bar span { position: absolute; left: 6px; top: 0; font-size: 0.75rem; line-height: 18px; color: #333; }
+
+/* --- 그래프 좌 / 지도 우 2단 --- */
+.chart-map-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; align-items: start; }
+.chart-map-layout.nomap { grid-template-columns: 1fr; }
+.map-col { position: sticky; top: 1rem; }
+.map-col .map-wrap { height: 440px; }
+.chart-col .sync-chart { margin-bottom: 0.75rem; }
+@media (max-width: 820px) { .chart-map-layout { grid-template-columns: 1fr; } .map-col { position: static; } }
+
+/* --- 목표 페이스 대비 발산 막대 --- */
+.goal-cell { white-space: nowrap; }
+.goal-delta { display: inline-block; min-width: 3.4rem; font-variant-numeric: tabular-nums; font-weight: 700; }
+.goal-delta.goal-fast { color: #1f9d55; }
+.goal-delta.goal-slow { color: #e0503a; }
+.goal-delta.goal-none { color: #aaa; font-weight: 400; }
+.goal-bar { position: relative; display: inline-block; vertical-align: middle; width: 150px; height: 12px;
+  background: #f0f0f0; border-radius: 6px; margin-left: 0.5rem; }
+.goal-bar::before { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: #bbb; }
+.goal-fill { position: absolute; top: 0; bottom: 0; }
+.goal-fill.goal-fast { left: 50%; background: #1f9d55; border-radius: 0 6px 6px 0; }
+.goal-fill.goal-slow { right: 50%; background: #e0503a; border-radius: 6px 0 0 6px; }

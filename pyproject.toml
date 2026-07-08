@@ -1,0 +1,22 @@
+[project]
+name = "strava-coach"
+version = "0.1.0"
+description = "Strava 데이터 기반 로컬 훈련 코파일럿"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "python-dotenv>=1.0",
+    "anthropic>=0.34",
+    "truststore>=0.9",
+    "python-multipart>=0.0.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["strava_coach*"]

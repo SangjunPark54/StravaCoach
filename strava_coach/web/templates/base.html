@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Strava Coach</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav>
+    <a href="/">대시보드</a>
+    <a href="/sessions">세션 목록</a>
+    <a href="/profile">심박 프로필</a>
+    <a href="/plan">다음 훈련 계획</a>
+    <form action="/sync" method="post"><button type="submit">지금 동기화</button></form>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

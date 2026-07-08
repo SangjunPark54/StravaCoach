@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>심박 프로필 <span class="muted" style="font-size:0.9rem;font-weight:400;">— 전체 세션 데이터 집계</span></h1>
+  <p class="muted">누적 심박 기록 시간 {{ profile.total_time_str }}{% if profile.hr_max_observed %} · 관측 최대심박 {{ profile.hr_max_observed }} bpm{% endif %}</p>
+
+  {% if races.predictions %}
+  <section>
+    <h2>🏁 예상 레이스 페이스 <span class="muted" style="font-size:0.85rem;font-weight:400;">(최고 기록 기반 · Riegel 예측)</span></h2>
+    <div class="stat-grid">
+      {% for p in races.predictions %}
+      <div class="stat">
+        <div class="stat-label">{{ p.distance_km }}km 예상</div>
+        <div class="stat-val">{{ p.pace_str }}<span class="muted" style="font-size:.7rem;display:block;">기록 {{ p.time_str }}</span></div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="muted" style="font-size:0.8rem;">※ 실제 기록 중 최고 성능을 거리로 환산한 예측치입니다. 인터벌/훈련 부하에 따라 달라질 수 있어요.</p>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>내 HR존 프로필</h2>
+    <table>
+      <thead>
+        <tr><th>존</th><th>심박 범위(bpm)</th><th>누적 시간</th><th>비율</th><th>평균 페이스</th></tr>
+      </thead>
+      <tbody>
+        {% for z in profile.zones %}
+        <tr>
+          <td><span class="zone zone-{{ z.zone }}">{{ z.zone }}</span></td>
+          <td>{{ z.low }}{% if z.high %}–{{ z.high }}{% else %}+{% endif %}</td>
+          <td>{{ z.time_str }}</td>
+          <td>
+            <div class="pct-bar"><div class="pct-fill zone-{{ z.zone }}" style="width: {{ z.pct }}%"></div><span>{{ z.pct }}%</span></div>
+          </td>
+          <td>{{ z.avg_pace or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if profile.hr_pace %}
+  <section>
+    <h2>심박수별 페이스 <span class="muted" style="font-size:0.85rem;font-weight:400;">(5bpm 구간 평균)</span></h2>
+    <canvas id="hrPaceChart" height="90"></canvas>
+    <table>
+      <thead><tr><th>심박(bpm)</th><th>평균 페이스</th><th>표본수</th></tr></thead>
+      <tbody>
+        {% for h in profile.hr_pace %}
+        <tr><td>{{ h.hr }}–{{ h.hr + 4 }}</td><td>{{ h.avg_pace }}/km</td><td>{{ h.n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const HP = {{ profile.hr_pace | tojson }};
+    const paceFmt = s => { s = Math.round(s); return Math.floor(s/60) + "'" + String(s%60).padStart(2,'0') + '"'; };
+    new Chart(document.getElementById('hrPaceChart'), {
+      type: 'line',
+      data: { labels: HP.map(h => h.hr),
+        datasets: [{ label: '평균 페이스', data: HP.map(h => h.avg_pace_sec),
+          borderColor: '#fc4c02', backgroundColor: 'rgba(252,76,2,.1)', fill: true, tension: 0.3, pointRadius: 3 }] },
+      options: { plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => paceFmt(c.parsed.y) + '/km' } } },
+        scales: { x: { title: { display: true, text: '심박수 (bpm)' } },
+          y: { reverse: true, title: { display: true, text: '페이스' }, ticks: { callback: paceFmt } } } },
+    });
+  </script>
+  {% endif %}
+{% endblock %}

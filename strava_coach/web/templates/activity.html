@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block content %}
+  <p><a href="/sessions">← 세션 목록</a></p>
+  <h1>{{ a.date }} · {{ a.name }} <span class="tag tag-{{ a.type }}">{{ a.type }}</span></h1>
+
+  <section class="stat-grid">
+    <div class="stat"><div class="stat-label">거리</div><div class="stat-val">{{ a.distance_km }} km</div></div>
+    <div class="stat"><div class="stat-label">시간</div><div class="stat-val">{{ a.moving_time_str }}</div></div>
+    <div class="stat"><div class="stat-label">평균 페이스</div><div class="stat-val">{{ a.avg_pace_str }}</div></div>
+    <div class="stat"><div class="stat-label">평균 HR</div><div class="stat-val">{{ a.avg_hr or '—' }}</div></div>
+    <div class="stat"><div class="stat-label">최대 HR</div><div class="stat-val">{{ a.max_hr or '—' }}</div></div>
+    <div class="stat"><div class="stat-label">상승고도</div><div class="stat-val">{{ a.elevation_gain if a.elevation_gain is not none else '—' }} m</div></div>
+  </section>
+  {% if a.device %}<p class="muted">기기: {{ a.device }}{% if not a.has_hr %} · ⚠️ 심박 데이터 없음{% endif %}</p>{% endif %}
+
+  {% if a.route or a.chart_sync %}
+  <section>
+    <h2>구간 그래프{% if a.route %} & 경로 재생{% endif %}
+      <span class="muted" style="font-size:0.85rem;font-weight:400;">— 그래프에 마우스를 올리면 수치와 지도 위치가 함께 표시됩니다</span></h2>
+    {% if a.route %}<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">{% endif %}
+
+    {% if a.chart_sync %}
+    <div id="chartReadout" class="chart-readout">
+      <span><b>거리</b> <span id="ro-d">—</span></span>
+      <span class="ro-hr"><b>심박</b> <span id="ro-h">—</span></span>
+      <span class="ro-pace"><b>페이스</b> <span id="ro-p">—</span></span>
+      <span class="ro-alt"><b>고도</b> <span id="ro-a">—</span></span>
+    </div>
+    {% endif %}
+
+    <div class="chart-map-layout{% if not a.route %} nomap{% endif %}">
+      <div class="chart-col">
+        {% if a.chart_sync %}
+        {% if a.chart_sync.has_hr %}<div class="sync-chart"><span class="sync-label">심박 (bpm)</span><canvas id="hrChart" height="75"></canvas></div>{% endif %}
+        {% if a.chart_sync.has_pace %}<div class="sync-chart"><span class="sync-label">페이스</span><canvas id="paceChart" height="75"></canvas></div>{% endif %}
+        {% if a.chart_sync.has_alt %}<div class="sync-chart"><span class="sync-label">고도 (m)</span><canvas id="altChart" height="60"></canvas></div>{% endif %}
+        {% endif %}
+      </div>
+
+      {% if a.route %}
+      <div class="map-col">
+        <div class="map-wrap">
+          <div id="map" style="height: 100%; min-height: 440px; border-radius: 8px; overflow: hidden;"></div>
+          <div class="map-style-toggle">
+            <button type="button" data-style="sat" class="active">🛰 위성</button>
+            <button type="button" data-style="street">🗺 일반맵</button>
+          </div>
+          {% if a.playback %}
+          <div id="hud" class="hud">
+            <div class="hud-row"><span class="hud-label">거리</span><span id="hud-d" class="hud-val">0.00 km</span></div>
+            <div class="hud-row"><span class="hud-label">시간</span><span id="hud-t" class="hud-val">0:00</span></div>
+            <div class="hud-row"><span class="hud-label">페이스</span><span id="hud-p" class="hud-val">—</span></div>
+            <div class="hud-row"><span class="hud-label">심박</span><span id="hud-h" class="hud-val">—</span></div>
+            <div class="hud-row"><span class="hud-label">고도</span><span id="hud-a" class="hud-val">—</span></div>
+          </div>
+          {% endif %}
+        </div>
+        {% if a.playback %}
+        <div class="replay-controls">
+          <button id="playBtn" class="replay-btn">▶ 재생</button>
+          <button id="resetBtn" class="replay-btn secondary">⟲ 처음</button>
+          <label class="speed-label">속도
+            <select id="speedSel">
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8" selected>8×</option>
+              <option value="16">16×</option>
+              <option value="32">32×</option>
+            </select>
+          </label>
+          <label class="speed-label"><input type="checkbox" id="followChk" checked> 1인칭 3D 따라가기</label>
+          <input id="scrub" type="range" min="0" max="100" value="0" step="0.1">
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if a.zone_time %}
+  <section>
+    <h2>HR존 체류 시간</h2>
+    <canvas id="zoneChart" height="70"></canvas>
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>스플릿 (1km) <span class="muted" style="font-size:0.9rem;font-weight:400;">— {{ a.splits|length }}구간</span></h2>
+    <table>
+      <thead>
+        <tr><th>km</th><th>구간</th><th>시간</th><th>페이스</th><th>평균HR</th><th>존</th><th>목표 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for s in a.splits %}
+        <tr>
+          <td>{{ s.km }}</td>
+          <td>{{ s.distance_km }} km</td>
+          <td>{{ s.time_str }}</td>
+          <td>{{ s.pace_str }}</td>
+          <td>{{ s.avg_hr or '—' }}</td>
+          <td>{% if s.zone %}<span class="zone zone-{{ s.zone }}">{{ s.zone }}</span>{% else %}—{% endif %}</td>
+          <td class="goal-cell">
+            <span class="goal-delta goal-{{ s.vs_goal_dir }}">{{ s.vs_goal_str }}</span>
+            <div class="goal-bar"><div class="goal-fill goal-{{ s.vs_goal_dir }}" style="width: {{ s.bar_half }}%"></div></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>랩 <span class="muted" style="font-size:0.9rem;font-weight:400;">— {{ a.laps|length }}개 (기록장치 랩)</span></h2>
+    <table>
+      <thead>
+        <tr><th>#</th><th>거리(km)</th><th>시간</th><th>페이스</th><th>평균HR</th><th>존</th><th>목표 대비</th></tr>
+      </thead>
+      <tbody>
+        {% for l in a.laps %}
+        <tr>
+          <td>{{ l.index }}</td>
+          <td>{{ l.distance_km }}</td>
+          <td>{{ l.time_str }}</td>
+          <td>{{ l.pace_str }}</td>
+          <td>{{ l.avg_hr or '—' }}</td>
+          <td>{% if l.zone %}<span class="zone zone-{{ l.zone }}">{{ l.zone }}</span>{% else %}—{% endif %}</td>
+          <td class="goal-cell">
+            <span class="goal-delta goal-{{ l.vs_goal_dir }}">{{ l.vs_goal_str }}</span>
+            <div class="goal-bar"><div class="goal-fill goal-{{ l.vs_goal_dir }}" style="width: {{ l.bar_half }}%"></div></div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script>
+    const A = {{ a | tojson }};
+    let mapHover = null; // 그래프 hover/클릭 시 지도 마커를 옮기고 센터 포커스
+    let seekTo = null;   // 그래프 클릭 시 재생 위치를 그 시점으로 고정
+
+    if (A.route && A.route.length && window.maplibregl) {
+      const routeLL = A.route.map(p => [p[1], p[0]]); // [lng,lat]
+      const bounds = routeLL.reduce((b, c) => b.extend(c), new maplibregl.LngLatBounds(routeLL[0], routeLL[0]));
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {
+            sat: {
+              type: 'raster', tileSize: 256, maxzoom: 19,
+              tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+              attribution: '© Esri World Imagery',
+            },
+            osm: {
+              type: 'raster', tileSize: 256, maxzoom: 19,
+              tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              attribution: '© OpenStreetMap',
+            },
+            dem: {
+              type: 'raster-dem', tileSize: 256, encoding: 'terrarium', maxzoom: 15,
+              tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+            },
+          },
+          layers: [
+            { id: 'street', type: 'raster', source: 'osm', layout: { visibility: 'none' } },
+            { id: 'sat', type: 'raster', source: 'sat', layout: { visibility: 'visible' } },
+          ],
+        },
+        center: routeLL[0], zoom: 13, pitch: 0, bearing: 0,
+        attributionControl: true,
+      });
+      map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+
+      const fr = A.playback || [];
+      const paceFmt2 = s => s ? (Math.floor(s/60) + "'" + String(s%60).padStart(2,'0') + '"/km') : '—';
+      const timeFmt = s => { s = Math.round(s); const m = Math.floor(s/60), ss = s%60;
+        const h = Math.floor(m/60); return (h ? h+':'+String(m%60).padStart(2,'0') : m) + ':' + String(ss).padStart(2,'0'); };
+      const lerp = (a, b, r) => a + (b - a) * r;
+
+      function bearingOf(a, b) { // a,b = [lng,lat]
+        const toR = d => d*Math.PI/180, toD = r => r*180/Math.PI;
+        const y = Math.sin(toR(b[0]-a[0])) * Math.cos(toR(b[1]));
+        const x = Math.cos(toR(a[1]))*Math.sin(toR(b[1])) - Math.sin(toR(a[1]))*Math.cos(toR(b[1]))*Math.cos(toR(b[0]-a[0]));
+        return (toD(Math.atan2(y, x)) + 360) % 360;
+      }
+
+      map.on('load', () => {
+        map.setTerrain({ source: 'dem', exaggeration: 1.4 });
+        map.addSource('route', { type: 'geojson', data: geo(routeLL) });
+        map.addSource('trail', { type: 'geojson', data: geo([routeLL[0]]) });
+        map.addSource('pos', { type: 'geojson', data: pt(routeLL[0]) });
+        map.addLayer({ id: 'route', type: 'line', source: 'route',
+          paint: { 'line-color': '#fc4c02', 'line-width': 3, 'line-opacity': 0.5 } });
+        map.addLayer({ id: 'trail', type: 'line', source: 'trail',
+          paint: { 'line-color': '#fc4c02', 'line-width': 5 } });
+        map.addLayer({ id: 'pos', type: 'circle', source: 'pos',
+          paint: { 'circle-radius': 8, 'circle-color': '#fc4c02', 'circle-stroke-width': 3, 'circle-stroke-color': '#fff' } });
+        map.fitBounds(bounds, { padding: 30, pitch: 0, duration: 0 });
+      });
+
+      // 그래프 hover/클릭 index → 지도 마커(pos)를 옮기고 그 지점을 화면 중앙으로
+      mapHover = (idx) => {
+        const cs = A.chart_sync;
+        if (!cs || !cs.has_latlng) return;
+        const la = cs.lat[idx], ln = cs.lng[idx];
+        if (la == null || ln == null) return;
+        const src = map.getSource && map.getSource('pos');
+        if (src) src.setData(pt([ln, la]));
+        map.panTo([ln, la], { animate: false }); // 센터 포커스(즉시)
+      };
+
+      function geo(coords) { return { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }; }
+      function pt(c) { return { type: 'Feature', geometry: { type: 'Point', coordinates: c } }; }
+
+      // 지도 모드 전환 (위성 / 일반맵)
+      document.querySelectorAll('.map-style-toggle button').forEach(b => {
+        b.addEventListener('click', () => {
+          const st = b.dataset.style;
+          const apply = () => {
+            map.setLayoutProperty('sat', 'visibility', st === 'sat' ? 'visible' : 'none');
+            map.setLayoutProperty('street', 'visibility', st === 'street' ? 'visible' : 'none');
+          };
+          if (map.getLayer('sat')) apply(); else map.on('load', apply);
+          document.querySelectorAll('.map-style-toggle button').forEach(x => x.classList.toggle('active', x === b));
+        });
+      });
+
+      // --- 재생(replay) ---
+      if (fr.length > 1) {
+        const FOLLOW_ZOOM = 16.5, PITCH = 68;
+        const totalT = fr[fr.length - 1].t || fr.length;
+        let playing = false, curT = 0, speed = 8, raf = null, lastTs = null;
+        let follow = document.getElementById('followChk').checked;
+        let last = [fr[0].lng, fr[0].lat];
+        const btn = document.getElementById('playBtn');
+        const scrub = document.getElementById('scrub');
+
+        function stateAt(t) {
+          let i = 0;
+          while (i < fr.length - 1 && (fr[i + 1].t || 0) <= t) i++;
+          const f = fr[i], g = fr[Math.min(i + 1, fr.length - 1)];
+          const span = (g.t || 0) - (f.t || 0);
+          const r = span > 0 ? Math.min(1, Math.max(0, (t - (f.t || 0)) / span)) : 0;
+          const mix = (a, b) => (a == null ? b : (b == null ? a : lerp(a, b, r)));
+          return { i, t, lng: lerp(f.lng, g.lng, r), lat: lerp(f.lat, g.lat, r),
+            d: mix(f.d, g.d), hr: mix(f.hr, g.hr), pace: mix(f.pace, g.pace), alt: mix(f.alt, g.alt) };
+        }
+        function lookAhead(t) { // 진행 방향(베어링)용: 앞쪽 지점
+          const s = stateAt(Math.min(totalT, t + 6));
+          return [s.lng, s.lat];
+        }
+        function render(t) {
+          const s = stateAt(t);
+          last = [s.lng, s.lat];
+          if (map.getSource('pos')) {
+            map.getSource('pos').setData(pt(last));
+            const upto = fr.slice(0, s.i + 1).map(p => [p.lng, p.lat]);
+            upto.push(last);
+            map.getSource('trail').setData(geo(upto));
+          }
+          document.getElementById('hud-d').textContent = (s.d != null ? s.d.toFixed(2) : '0.00') + ' km';
+          document.getElementById('hud-t').textContent = timeFmt(t);
+          document.getElementById('hud-p').textContent = paceFmt2(s.pace != null ? Math.round(s.pace) : null);
+          document.getElementById('hud-h').textContent = s.hr != null ? Math.round(s.hr) + ' bpm' : '—';
+          document.getElementById('hud-a').textContent = s.alt != null ? s.alt.toFixed(1) + ' m' : '—';
+          scrub.value = (t / totalT) * 100;
+          if (playing) { // 재생 중엔 마커를 화면 중앙에 두고 따라감
+            if (follow) { // 1인칭 3D
+              const ahead = lookAhead(t);
+              map.jumpTo({ center: last, zoom: FOLLOW_ZOOM, pitch: PITCH,
+                bearing: (ahead[0] === last[0] && ahead[1] === last[1]) ? map.getBearing() : bearingOf(last, ahead) });
+            } else { // 평면 센터 포커스
+              map.panTo(last, { animate: false });
+            }
+          }
+        }
+        function tick(ts) {
+          if (!playing) return;
+          if (lastTs != null) curT += (ts - lastTs) / 1000 * speed;
+          lastTs = ts;
+          if (curT >= totalT) { curT = totalT; render(curT); stop(); return; }
+          render(curT);
+          raf = requestAnimationFrame(tick);
+        }
+        function play() {
+          if (curT >= totalT) curT = 0;
+          playing = true; lastTs = null; btn.textContent = '⏸ 일시정지';
+          if (follow) { const a = lookAhead(curT); map.easeTo({ center: last, zoom: FOLLOW_ZOOM, pitch: PITCH, bearing: bearingOf(last, a), duration: 800 }); }
+          raf = requestAnimationFrame(tick);
+        }
+        function stop() { playing = false; if (raf) cancelAnimationFrame(raf); btn.textContent = '▶ 재생'; }
+
+        // 그래프 클릭 → 그 시점으로 고정(재생 위치 지정)
+        seekTo = (tt) => {
+          if (tt == null) return;
+          stop();
+          curT = Math.max(0, Math.min(totalT, tt));
+          render(curT);
+          scrub.value = (curT / totalT) * 100;
+        };
+
+        btn.addEventListener('click', () => playing ? stop() : play());
+        document.getElementById('resetBtn').addEventListener('click', () => {
+          stop(); curT = 0; render(0);
+          if (!follow) map.easeTo({ center: bounds.getCenter(), pitch: 0, bearing: 0, duration: 400 });
+        });
+        document.getElementById('speedSel').addEventListener('change', e => { speed = +e.target.value; });
+        document.getElementById('followChk').addEventListener('change', e => {
+          follow = e.target.checked;
+          if (follow) map.easeTo({ center: last, zoom: FOLLOW_ZOOM, pitch: PITCH, duration: 600 });
+          else map.easeTo({ ...map.cameraForBounds(bounds, { padding: 30 }), pitch: 0, bearing: 0, duration: 600 });
+        });
+        scrub.addEventListener('input', e => { stop(); curT = (+e.target.value / 100) * totalT; render(curT); });
+        map.on('load', () => render(0));
+      }
+    }
+    const paceFmt = s => { s = Math.round(s); return Math.floor(s/60) + "'" + String(s%60).padStart(2,'0') + '"'; };
+    const lineOpts = (yTitle, extra={}) => Object.assign({
+      responsive: true, plugins: { legend: { display: false } },
+      scales: { x: { title: { display: true, text: '거리 (km)' } }, y: { title: { display: true, text: yTitle } } }
+    }, extra);
+
+    // --- 3개 차트 연동: 같은 거리축, 한 곳에 마우스 올리면 세 지표 동시 표시 ---
+    if (A.chart_sync) {
+      const CS = A.chart_sync;
+      const charts = [];
+      const roD = document.getElementById('ro-d'), roH = document.getElementById('ro-h'),
+            roP = document.getElementById('ro-p'), roA = document.getElementById('ro-a');
+
+      function updateReadout(idx) {
+        if (idx == null || idx < 0 || idx >= CS.x.length) return;
+        roD.textContent = CS.x[idx].toFixed(2) + ' km';
+        roH.textContent = CS.hr[idx] != null ? CS.hr[idx] + ' bpm' : '—';
+        roP.textContent = CS.pace[idx] != null ? paceFmt(CS.pace[idx]) + '/km' : '—';
+        roA.textContent = CS.alt[idx] != null ? CS.alt[idx].toFixed(1) + ' m' : '—';
+        if (mapHover) mapHover(idx); // 지도 위 위치 마커도 이동
+      }
+      // 다른 차트들에도 같은 index의 세로선/툴팁을 그린다
+      function syncTo(idx, srcChart) {
+        for (const c of charts) {
+          if (c === srcChart) continue;
+          const el = [{ datasetIndex: 0, index: idx }];
+          c.setActiveElements(el);
+          c.tooltip.setActiveElements(el, { x: 0, y: 0 });
+          c.update();
+        }
+      }
+      const baseOpts = (yTitle, extra = {}) => Object.assign({
+        responsive: true, maintainAspectRatio: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { display: false }, tooltip: { enabled: true } },
+        onHover: (evt, els, chart) => {
+          if (els && els.length) { const i = els[0].index; updateReadout(i); syncTo(i, chart); }
+        },
+        onClick: (evt, els, chart) => {
+          if (els && els.length) {
+            const i = els[0].index;
+            updateReadout(i); syncTo(i, chart);
+            if (seekTo && CS.t) seekTo(CS.t[i]); // 클릭한 시점으로 재생 위치 고정
+          }
+        },
+        scales: { x: { title: { display: true, text: '거리 (km)' } },
+          y: { title: { display: true, text: yTitle }, afterFit: (s) => { s.width = 60; } } },
+      }, extra);
+
+      if (CS.has_hr) charts.push(new Chart(hrChart, { type: 'line',
+        data: { labels: CS.x, datasets: [{ data: CS.hr, borderColor: '#d92b2b', pointRadius: 0, borderWidth: 1.5, tension: 0.3, spanGaps: true }] },
+        options: baseOpts('bpm', { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y != null ? c.parsed.y + ' bpm' : '') },
+          onHover: undefined } }, onHover: (evt, els, chart) => { if (els && els.length) { updateReadout(els[0].index); syncTo(els[0].index, chart); } } }) }));
+
+      if (CS.has_pace) charts.push(new Chart(paceChart, { type: 'line',
+        data: { labels: CS.x, datasets: [{ data: CS.pace, borderColor: '#fc4c02', pointRadius: 0, borderWidth: 1.5, tension: 0.3, spanGaps: true }] },
+        options: baseOpts('페이스', { scales: { x: { title: { display: true, text: '거리 (km)' } },
+            y: { reverse: true, title: { display: true, text: '페이스' }, ticks: { callback: paceFmt }, afterFit: (s) => { s.width = 60; } } },
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y != null ? paceFmt(c.parsed.y) + '/km' : '') } } },
+          onHover: (evt, els, chart) => { if (els && els.length) { updateReadout(els[0].index); syncTo(els[0].index, chart); } } }) }));
+
+      if (CS.has_alt) charts.push(new Chart(altChart, { type: 'line',
+        data: { labels: CS.x, datasets: [{ data: CS.alt, borderColor: '#2b7', backgroundColor: 'rgba(34,187,119,.15)', fill: true, pointRadius: 0, borderWidth: 1, tension: 0.3, spanGaps: true }] },
+        options: baseOpts('m', { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.parsed.y != null ? c.parsed.y + ' m' : '') } } },
+          onHover: (evt, els, chart) => { if (els && els.length) { updateReadout(els[0].index); syncTo(els[0].index, chart); } } }) }));
+    }
+    if (A.zone_time && Object.keys(A.zone_time).length) {
+      const zones = Object.keys(A.zone_time);
+      const colors = { Z1:'#8ab', Z2:'#5b8', Z3:'#eb0', Z4:'#e70', Z5:'#d33' };
+      new Chart(zoneChart, { type: 'bar', data: { labels: zones,
+        datasets: [{ data: zones.map(z => Math.round(A.zone_time[z]/60)), backgroundColor: zones.map(z => colors[z]) }] },
+        options: { indexAxis: 'y', plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: c => c.parsed.x + '분' } } },
+          scales: { x: { title: { display: true, text: '분' }, beginAtZero: true } } } });
+    }
+  </script>
+{% endblock %}

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block content %}
+  <h1>다음 훈련 계획</h1>
+
+  <section class="goal-box">
+    <h2>🎯 목표 설정</h2>
+    <form action="/goal" method="post" class="goal-form">
+      <label>거리(km)
+        <input type="number" name="goal_distance_km" step="0.1" value="{{ goal.distance_km }}" required>
+      </label>
+      <label>목표 페이스
+        <span class="pace-input">
+          <input type="number" name="goal_pace_min" min="0" value="{{ (goal.pace_sec // 60) }}" required>′
+          <input type="number" name="goal_pace_sec" min="0" max="59" value="{{ '%02d'|format(goal.pace_sec % 60) }}" required>″/km
+        </span>
+      </label>
+      <label>목표일
+        <input type="date" name="goal_date" value="{{ goal.date }}" required>
+      </label>
+      <button type="submit" class="replay-btn">저장</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>📊 현재 상태 분석 <span class="muted" style="font-size:0.9rem;font-weight:400;">(최근 28일 데이터 기준)</span></h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">주간 평균 볼륨</div><div class="stat-val">{{ analysis.avg_weekly_km }} km</div></div>
+      <div class="stat"><div class="stat-label">최근 7일</div><div class="stat-val">{{ analysis.km_7d }} km</div></div>
+      <div class="stat"><div class="stat-label">ACWR(부하)</div><div class="stat-val">{{ analysis.acwr or '—' }}<span class="muted" style="font-size:.7rem;display:block;">{{ analysis.acwr_flag }}</span></div></div>
+      <div class="stat"><div class="stat-label">최장 러닝</div><div class="stat-val">{{ analysis.longest_run_km or '—' }} km</div></div>
+      <div class="stat"><div class="stat-label">이지 평균페이스</div><div class="stat-val">{{ analysis.avg_easy_pace or '—' }}</div></div>
+      <div class="stat"><div class="stat-label">퀄리티 평균페이스</div><div class="stat-val">{{ analysis.avg_quality_pace or '—' }}</div></div>
+      <div class="stat"><div class="stat-label">평균 심박</div><div class="stat-val">{{ analysis.avg_hr_28d or '—' }}</div></div>
+      <div class="stat"><div class="stat-label">28일 세션수</div><div class="stat-val">{{ analysis.sessions_28d }}</div></div>
+    </div>
+    <p class="goal-status">
+      목표 <strong>{{ analysis.goal_distance_km }}km {{ analysis.goal_pace }}/km</strong> ·
+      D-{{ analysis.days_to_goal }} ·
+      최근 최고 {{ analysis.best_recent_pace }} →
+      <strong class="{{ 'ok' if analysis.pace_gap_sec is not none and analysis.pace_gap_sec <= 0 else 'gap' }}">{{ analysis.goal_status }}</strong>
+    </p>
+  </section>
+
+  <section>
+    <p>훈련 단계: <strong>{{ plan.phase }}</strong> · 목표일까지 {{ plan.days_to_goal }}일</p>
+    {% if plan.acwr_warning %}
+      <p class="warning">⚠️ 최근 주간 볼륨이 전주 대비 20% 이상 증가했습니다. 부상 위험에 유의하세요.</p>
+    {% endif %}
+    <h2>🤖 AI 코치 분석 & 맞춤 계획 <span class="muted" style="font-size:0.85rem;font-weight:400;">(GPT-4o)</span></h2>
+    <button id="askLlmBtn" class="replay-btn">{% if saved_plan %}🔄 다시 생성{% else %}🤖 AI 코치에게 분석 + 계획 요청{% endif %}</button>
+    <p class="muted" style="font-size:0.85rem;">최근 세션 이력·목표를 GPT-4o에 보내 분석하고 다음 7일 계획을 설계합니다. 생성된 계획은 저장되어 다시 열어도 유지됩니다.</p>
+    <div id="coachResult">
+      {% if saved_plan %}
+      <p class="muted" style="font-size:0.8rem;">🗓 생성일 {{ saved_plan.generated }}{% if saved_plan.goal %} · 목표 {{ saved_plan.goal.distance_km }}km {{ (saved_plan.goal.pace_sec // 60) }}'{{ '%02d'|format(saved_plan.goal.pace_sec % 60) }}"/km{% endif %}</p>
+      {% if saved_plan.analysis_html %}<div class="commentary">{{ saved_plan.analysis_html | safe }}</div>{% endif %}
+      {% if saved_plan.focus %}<p class="goal-status"><strong>이번 주 포커스:</strong> {{ saved_plan.focus }}</p>{% endif %}
+      {% if saved_plan.plan %}
+      <h3>AI 맞춤 7일 계획</h3>
+      <table>
+        <thead><tr><th>날짜</th><th>타입</th><th>세션</th><th>내용</th></tr></thead>
+        <tbody>
+          {% for s in saved_plan.plan %}
+          <tr><td>{{ s.date }}</td><td><span class="tag tag-{{ s.type }}">{{ s.type }}</span></td><td>{{ s.title }}</td><td>{{ s.detail }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+      {% endif %}
+    </div>
+  </section>
+
+  <script>
+    const btn = document.getElementById('askLlmBtn');
+    const out = document.getElementById('coachResult');
+    const tagCls = t => 'tag tag-' + t;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const orig = btn.textContent;
+      btn.textContent = '⏳ AI 코치 분석 중… (최대 20초)';
+      out.innerHTML = '';
+      try {
+        const res = await fetch('/api/coach');
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        let html = '';
+        if (data.analysis_html) html += '<div class="commentary">' + data.analysis_html + '</div>';
+        if (data.focus) html += '<p class="goal-status"><strong>이번 주 포커스:</strong> ' + data.focus + '</p>';
+        if (data.plan && data.plan.length) {
+          html += '<h3>AI 맞춤 7일 계획</h3><table><thead><tr><th>날짜</th><th>타입</th><th>세션</th><th>내용</th></tr></thead><tbody>';
+          for (const s of data.plan) {
+            const type = (s.type || '').replace(/[^a-z_]/g, '') || 'easy';
+            html += '<tr><td>' + (s.date||'') + '</td><td><span class="' + tagCls(type) + '">' + (s.type||'') +
+              '</span></td><td>' + (s.title||'') + '</td><td>' + (s.detail||'') + '</td></tr>';
+          }
+          html += '</tbody></table>';
+        }
+        out.innerHTML = html || '<span class="muted">응답이 비어 있습니다.</span>';
+      } catch (e) {
+        out.innerHTML = '<span style="color:#c0392b">요청 실패: ' + e.message + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+  </script>
+{% endblock %}
