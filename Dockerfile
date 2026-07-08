@@ -17,4 +17,5 @@ ENV HOST=0.0.0.0 \
     LLM_PROVIDER=github
 
 EXPOSE 7860
-CMD ["python", "-m", "strava_coach", "serve"]
+# uvicorn을 직접 실행(__main__의 truststore 주입/포트 env 우회 → HF에서 안정적)
+CMD ["uvicorn", "strava_coach.web.app:app", "--host", "0.0.0.0", "--port", "7860"]

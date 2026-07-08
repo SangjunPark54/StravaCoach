@@ -27,6 +27,13 @@ app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 
+@app.get("/healthz")
+def healthz():
+    from fastapi.responses import PlainTextResponse
+
+    return PlainTextResponse("ok")
+
+
 def _sessions() -> list[dict]:
     conn = db.get_connection()
     activities = db.all_activities(conn)
