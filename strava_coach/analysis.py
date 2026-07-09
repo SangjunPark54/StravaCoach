@@ -58,6 +58,40 @@ def resolve_hr_zones(conn: sqlite3.Connection) -> dict:
     return dict(HR_ZONES)
 
 
+_PACE_ZONE_NAMES = ["Recovery", "Endurance", "Tempo", "Threshold", "VO2 Max", "Anaerobic"]
+
+
+def pace_distribution(activity_zones: list) -> list[dict]:
+    """Strava /zones의 pace 버킷 → 페이스 존 분포(범위·시간). 값 전부 API 기반."""
+    for zt in activity_zones or []:
+        if zt.get("type") != "pace":
+            continue
+        buckets = zt.get("distribution_buckets") or []
+        total = sum((b.get("time") or 0) for b in buckets) or 1
+        rows = []
+        for i, b in enumerate(buckets):
+            smin, smax = b.get("min", 0), b.get("max")
+            pace_fast = 1000 / smax if smax and smax > 0 else None  # 빠른쪽 경계
+            pace_slow = 1000 / smin if smin and smin > 0 else None  # 느린쪽 경계
+            if pace_fast is None:
+                rng = f"< {format_pace(pace_slow)}"       # 최고속 존(max=-1): ~보다 빠름
+            elif pace_slow is None:
+                rng = f"> {format_pace(pace_fast)}"       # 최저속 존(min=0): ~보다 느림
+            else:
+                rng = f"{format_pace(pace_fast)}~{format_pace(pace_slow)}"
+            t = b.get("time") or 0
+            rows.append({
+                "zone": f"Z{i + 1}",
+                "name": _PACE_ZONE_NAMES[i] if i < len(_PACE_ZONE_NAMES) else "",
+                "range": rng,
+                "time_str": format_duration(t),
+                "pct": round(100 * t / total, 1),
+            })
+        rows.reverse()  # 빠른 존이 위로 (Strava와 동일)
+        return rows
+    return []
+
+
 def zone_time_from_strava(activity_zones: list) -> dict:
     """활동의 Strava zones에서 HR존별 체류시간(초)을 그대로 가져온다."""
     for zt in activity_zones or []:
@@ -424,6 +458,7 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
     # HR존 체류시간: Strava가 계산한 값 우선, 없으면 스트림에서 폴백
     strava_zt = zone_time_from_strava(strava_zones)
     zone_time = strava_zt if strava_zt else (hr_zone_time(hr, time_s, zones) if hr else {})
+    pace_dist = pace_distribution(strava_zones)
 
     # 스플릿: Strava splits_metric(원본) 우선, 없으면 스트림에서 계산
     sm = a["splits_metric"] if "splits_metric" in a.keys() else None
@@ -482,6 +517,7 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
         "charts": charts,
         "chart_sync": chart_sync,
         "zone_time": zone_time,
+        "pace_dist": pace_dist,
     }
 
 

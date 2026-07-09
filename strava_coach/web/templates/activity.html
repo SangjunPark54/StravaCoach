@@ -85,6 +85,26 @@
   </section>
   {% endif %}
 
+  {% if a.pace_dist %}
+  <section>
+    <h2>페이스 분포 <span class="muted" style="font-size:0.85rem;font-weight:400;">(Strava GAP 페이스 존)</span></h2>
+    <table>
+      <thead><tr><th>존</th><th></th><th>페이스 범위</th><th>시간</th><th>비율</th></tr></thead>
+      <tbody>
+        {% for p in a.pace_dist %}
+        <tr>
+          <td><strong>{{ p.zone }}</strong></td>
+          <td>{{ p.name }}</td>
+          <td>{{ p.range }}/km</td>
+          <td>{{ p.time_str }}</td>
+          <td><div class="pct-bar"><div class="pct-fill" style="width: {{ p.pct }}%; background:#fc4c02;"></div><span>{{ p.pct }}%</span></div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
   <section>
     <h2>스플릿 (1km) <span class="muted" style="font-size:0.9rem;font-weight:400;">— {{ a.splits|length }}구간</span></h2>
     <table>
