@@ -1,5 +1,6 @@
 import http.server
 import json
+import os
 import socketserver
 import time
 import urllib.parse
@@ -78,9 +79,13 @@ def save_tokens(tokens: dict) -> None:
 
 
 def load_tokens() -> dict:
-    if not TOKEN_FILE.exists():
-        raise RuntimeError("인증 토큰이 없습니다. `python -m strava_coach auth`를 먼저 실행하세요.")
-    return json.loads(TOKEN_FILE.read_text())
+    if TOKEN_FILE.exists():
+        return json.loads(TOKEN_FILE.read_text())
+    # 토큰 파일이 없으면(HF 등 호스팅) 환경변수의 refresh token으로 시드 → 즉시 갱신됨
+    env_rt = os.environ.get("STRAVA_REFRESH_TOKEN")
+    if env_rt:
+        return {"refresh_token": env_rt, "expires_at": 0}
+    raise RuntimeError("인증 토큰이 없습니다. `python -m strava_coach auth`를 먼저 실행하세요.")
 
 
 def refresh_if_needed(client_id: str, client_secret: str) -> dict:

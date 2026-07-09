@@ -27,9 +27,20 @@ app = FastAPI(title="Strava Coach")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
-# HF Spaces 등 호스팅 환경 여부(HF가 SPACE_ID를 자동 주입). 호스팅에선 로컬 동기화 버튼 숨김.
+# HF Spaces 등 호스팅 환경 여부(HF가 SPACE_ID를 자동 주입).
 IS_HOSTED = bool(os.environ.get("SPACE_ID"))
 templates.env.globals["is_hosted"] = IS_HOSTED
+
+# 동기화 가능 여부: Strava client id/secret + (로컬 토큰파일 또는 STRAVA_REFRESH_TOKEN 환경변수)
+from ..auth import TOKEN_FILE  # noqa: E402
+from ..config import STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET  # noqa: E402
+
+SYNC_ENABLED = bool(
+    STRAVA_CLIENT_ID
+    and STRAVA_CLIENT_SECRET
+    and (TOKEN_FILE.exists() or os.environ.get("STRAVA_REFRESH_TOKEN"))
+)
+templates.env.globals["sync_enabled"] = SYNC_ENABLED
 
 
 @app.get("/healthz")
@@ -207,8 +218,7 @@ def set_goal(
 
 @app.post("/sync")
 def trigger_sync():
-    if IS_HOSTED:
-        # 호스팅 환경엔 Strava 토큰/시크릿이 없음 → 동기화는 로컬 전용
+    if not SYNC_ENABLED:
         return RedirectResponse(url="/?sync=hosted", status_code=303)
     try:
         n = sync_all()
