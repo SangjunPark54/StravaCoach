@@ -20,18 +20,57 @@ def format_pace(sec_per_km: Optional[float]) -> str:
     return f"{m}'{s:02d}\""
 
 
-def hr_zone(hr: Optional[float]) -> Optional[str]:
+def hr_zone(hr: Optional[float], zones: Optional[dict] = None) -> Optional[str]:
+    zones = zones or HR_ZONES
     if hr is None:
         return None
-    for zone, (low, high) in HR_ZONES.items():
+    for zone, (low, high) in zones.items():
         if low <= hr < high:
             return zone
     return None
 
 
-def classify_session(activity: sqlite3.Row, laps: list[sqlite3.Row]) -> str:
+def _zones_from_buckets(buckets: list) -> dict:
+    """Strava distribution_buckets([{min,max,time}])에서 존 경계를 만든다(하드코딩 없음)."""
+    out = {}
+    for i, b in enumerate(buckets):
+        lo = b.get("min", 0)
+        hi = b.get("max")
+        hi = 999 if (hi is None or hi < 0) else hi + 1  # 버킷 max는 포함값 → +1
+        out[f"Z{i + 1}"] = (lo, hi)
+    return out
+
+
+def resolve_hr_zones(conn: sqlite3.Connection) -> dict:
+    """실제 HR존을 Strava에서: 1) 계정 존(/athlete/zones) 2) 활동 zones 버킷 유도 3) 폴백."""
+    raw = db.get_state(conn, "athlete_zones")
+    if raw:
+        az = json.loads(raw)
+        hz = (az.get("heart_rate") or {}).get("zones") if isinstance(az, dict) else None
+        if hz and len(hz) >= 2:
+            return _zones_from_buckets(hz)
+    for zlist in db.all_zones(conn):
+        for zt in zlist:
+            if zt.get("type") == "heartrate":
+                buckets = zt.get("distribution_buckets") or []
+                if len(buckets) >= 2:
+                    return _zones_from_buckets(buckets)
+    return dict(HR_ZONES)
+
+
+def zone_time_from_strava(activity_zones: list) -> dict:
+    """활동의 Strava zones에서 HR존별 체류시간(초)을 그대로 가져온다."""
+    for zt in activity_zones or []:
+        if zt.get("type") == "heartrate":
+            return {f"Z{i + 1}": (b.get("time") or 0) for i, b in enumerate(zt.get("distribution_buckets") or [])}
+    return {}
+
+
+def classify_session(activity: sqlite3.Row, laps: list[sqlite3.Row], zones: Optional[dict] = None) -> str:
     """laps의 페이스 변동성으로 구조화 세션(VO2/역치)을 먼저 식별하고,
-    그 외엔 평균 HR/페이스/거리로 템포·롱런·이지런을 구분한다."""
+    그 외엔 평균 HR/페이스/거리로 템포·롱런·이지런을 구분한다. 템포 HR 기준은 Strava Z4."""
+    zones = zones or HR_ZONES
+    z4_low = zones.get("Z4", (154, 174))[0]
     distance_km = (activity["distance_m"] or 0) / 1000
     avg_hr = activity["average_heartrate"] or 0
     avg_pace = pace_sec_per_km(activity["distance_m"], activity["moving_time_s"])
@@ -67,7 +106,7 @@ def classify_session(activity: sqlite3.Row, laps: list[sqlite3.Row]) -> str:
         if variance_ratio >= 1.15 and mid_fast >= 3:
             return "threshold"
 
-    if avg_hr >= 154 and avg_pace and avg_pace <= 345 and distance_km >= 3:
+    if avg_hr >= z4_low and avg_pace and avg_pace <= 345 and distance_km >= 3:
         return "tempo"
     if distance_km >= 9:
         return "long_run"
@@ -75,6 +114,7 @@ def classify_session(activity: sqlite3.Row, laps: list[sqlite3.Row]) -> str:
 
 
 def summarize_activities(conn: sqlite3.Connection, activities: list[sqlite3.Row]) -> list[dict]:
+    zones = resolve_hr_zones(conn)
     results = []
     for a in activities:
         laps = db.laps_for(conn, a["id"])
@@ -91,8 +131,8 @@ def summarize_activities(conn: sqlite3.Connection, activities: list[sqlite3.Row]
                 "max_hr": a["max_heartrate"],
                 "suffer_score": a["suffer_score"] if "suffer_score" in a.keys() else None,
                 "gap_pace_sec": a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None,
-                "hr_zone": hr_zone(a["average_heartrate"]),
-                "type": classify_session(a, laps),
+                "hr_zone": hr_zone(a["average_heartrate"], zones),
+                "type": classify_session(a, laps, zones),
                 "lap_count": len(laps),
             }
         )
@@ -118,22 +158,24 @@ def _downsample(xs: list, ys: list, target: int = 200) -> tuple[list, list]:
     return [p[0] for p in picked], [p[1] for p in picked]
 
 
-def hr_zone_time(hr_stream: list, time_stream: list) -> dict[str, int]:
-    """heartrate/time 스트림으로 각 HR존 체류 시간(초)을 계산."""
-    result = {z: 0 for z in HR_ZONES}
+def hr_zone_time(hr_stream: list, time_stream: list, zones: Optional[dict] = None) -> dict[str, int]:
+    """heartrate/time 스트림으로 각 HR존 체류 시간(초)을 계산(Strava zones 없을 때 폴백)."""
+    zones = zones or HR_ZONES
+    result = {z: 0 for z in zones}
     if not hr_stream or not time_stream or len(hr_stream) != len(time_stream):
         return result
     for i in range(1, len(time_stream)):
         dt = (time_stream[i] or 0) - (time_stream[i - 1] or 0)
         if dt <= 0 or dt > 30:  # 큰 갭(일시정지)은 무시
             continue
-        z = hr_zone(hr_stream[i])
+        z = hr_zone(hr_stream[i], zones)
         if z:
             result[z] += dt
     return result
 
 
-def km_splits(dist_m: list, time_s: list, hr: Optional[list], unit_m: float = 1000.0) -> list[dict]:
+def km_splits(dist_m: list, time_s: list, hr: Optional[list], unit_m: float = 1000.0,
+              zones: Optional[dict] = None) -> list[dict]:
     """거리/시간/심박 스트림을 1km(unit_m) 단위로 롤업한 스플릿 목록을 만든다."""
     if not dist_m or not time_s or len(dist_m) != len(time_s):
         return []
@@ -157,8 +199,10 @@ def km_splits(dist_m: list, time_s: list, hr: Optional[list], unit_m: float = 10
                     "time_str": format_duration(pace),
                     "pace_sec": pace,
                     "pace_str": format_pace(pace),
+                    "gap_pace_str": None,
+                    "elev": None,
                     "avg_hr": round(sum(seg_hr) / len(seg_hr)) if seg_hr else None,
-                    "zone": hr_zone(sum(seg_hr) / len(seg_hr)) if seg_hr else None,
+                    "zone": hr_zone(sum(seg_hr) / len(seg_hr), zones) if seg_hr else None,
                 }
             )
             seg_start_t = t_at
@@ -179,8 +223,10 @@ def km_splits(dist_m: list, time_s: list, hr: Optional[list], unit_m: float = 10
                 "time_str": format_duration(elapsed),
                 "pace_sec": pace,
                 "pace_str": format_pace(pace),
+                "gap_pace_str": None,
+                "elev": None,
                 "avg_hr": round(sum(seg_hr) / len(seg_hr)) if seg_hr else None,
-                "zone": hr_zone(sum(seg_hr) / len(seg_hr)) if seg_hr else None,
+                "zone": hr_zone(sum(seg_hr) / len(seg_hr), zones) if seg_hr else None,
             }
         )
     # 상대 페이스 막대(빠를수록 길게)
@@ -238,6 +284,31 @@ def decode_polyline(encoded: str) -> list[list[float]]:
     return coords
 
 
+def strava_splits(splits_metric: list, zones: Optional[dict] = None) -> list[dict]:
+    """Strava splits_metric(pace-analysis 원본)에서 1km 스플릿 표를 만든다(GAP·고도 포함)."""
+    out = []
+    for s in splits_metric or []:
+        d = s.get("distance") or 0
+        mt = s.get("moving_time") or 0
+        pace = mt / (d / 1000) if d else None
+        gs = s.get("average_grade_adjusted_speed")
+        gap = (1000 / gs) if gs and gs > 0 else None
+        hr = s.get("average_heartrate")
+        elev = s.get("elevation_difference")
+        out.append({
+            "km": s.get("split"),
+            "distance_km": round(d / 1000, 2),
+            "time_str": format_duration(mt),
+            "pace_sec": pace,
+            "pace_str": format_pace(pace),
+            "gap_pace_str": format_pace(gap),
+            "avg_hr": round(hr) if hr else None,
+            "zone": hr_zone(hr, zones) if hr else None,
+            "elev": round(elev) if elev is not None else None,
+        })
+    return out
+
+
 def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict]:
     a = db.get_activity(conn, activity_id)
     if a is None:
@@ -246,6 +317,8 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
     laps = db.laps_for(conn, activity_id)
     streams = db.streams_for(conn, activity_id)
     goal_pace = resolve_goal(conn)["pace_sec"]
+    zones = resolve_hr_zones(conn)
+    strava_zones = db.zones_for(conn, activity_id)
 
     def col(s, key):
         return s[key] if key in s.keys() else None
@@ -265,7 +338,7 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
                 "pace_sec": p,
                 "pace_str": format_pace(p),
                 "avg_hr": round(lp["average_heartrate"]) if lp["average_heartrate"] else None,
-                "zone": hr_zone(lp["average_heartrate"]),
+                "zone": hr_zone(lp["average_heartrate"], zones),
             }
         )
     valid_paces = [p for p in lap_paces if p]
@@ -303,7 +376,7 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
             if seg:
                 avg = sum(seg) / len(seg)
                 row["avg_hr"] = round(avg)
-                row["zone"] = hr_zone(avg)
+                row["zone"] = hr_zone(avg, zones)
 
     pace_series = (
         [(1000 / v) if v and v > 0.5 else None for v in vel] if vel else None
@@ -348,9 +421,18 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
             "has_latlng": any(v is not None for v in clat),
         }
 
-    zone_time = hr_zone_time(hr, time_s) if hr else {}
+    # HR존 체류시간: Strava가 계산한 값 우선, 없으면 스트림에서 폴백
+    strava_zt = zone_time_from_strava(strava_zones)
+    zone_time = strava_zt if strava_zt else (hr_zone_time(hr, time_s, zones) if hr else {})
 
-    splits = km_splits(dist_m, time_s, hr) if dist_m and time_s else []
+    # 스플릿: Strava splits_metric(원본) 우선, 없으면 스트림에서 계산
+    sm = a["splits_metric"] if "splits_metric" in a.keys() else None
+    if sm:
+        splits = strava_splits(json.loads(sm), zones)
+    elif dist_m and time_s:
+        splits = km_splits(dist_m, time_s, hr, zones=zones)
+    else:
+        splits = []
 
     # 목표 페이스 대비(±) 주석
     annotate_vs_goal(lap_rows, goal_pace)
@@ -391,7 +473,7 @@ def activity_detail(conn: sqlite3.Connection, activity_id: int) -> Optional[dict
         "max_hr": round(a["max_heartrate"]) if a["max_heartrate"] else None,
         "elevation_gain": round(raw.get("total_elevation_gain")) if raw.get("total_elevation_gain") else None,
         "device": raw.get("device_name"),
-        "type": classify_session(a, laps),
+        "type": classify_session(a, laps, zones),
         "has_hr": bool(hr),
         "route": route,
         "playback": playback,
@@ -557,12 +639,24 @@ def race_predictions(sessions: list[dict], distances_km=(5, 10)) -> dict:
 
 
 def hr_profile(conn: sqlite3.Connection) -> dict:
-    """모든 세션의 심박+속도 스트림을 집계해 존별 시간·평균페이스와 심박별 페이스를 만든다."""
-    zone_time = {z: 0.0 for z in HR_ZONES}
-    zone_pace: dict[str, list] = {z: [] for z in HR_ZONES}
+    """존별 시간(=Strava 계산값)과 존별/심박별 평균페이스를 집계. HR존은 Strava에서 가져옴."""
+    zone_bounds = resolve_hr_zones(conn)
+
+    # 1) 존별 체류시간: Strava가 계산한 값을 집계(권위값, 하드코딩 없음)
+    strava_zt: dict[str, float] = {z: 0.0 for z in zone_bounds}
+    have_strava = False
+    for zlist in db.all_zones(conn):
+        zt = zone_time_from_strava(zlist)
+        if zt:
+            have_strava = True
+            for z, t in zt.items():
+                strava_zt[z] = strava_zt.get(z, 0.0) + t
+
+    # 2) 스트림에서 존별/심박별 페이스(부가 분석) + Strava 없을 때 시간 폴백
+    zone_pace: dict[str, list] = {z: [] for z in zone_bounds}
+    stream_zt: dict[str, float] = {z: 0.0 for z in zone_bounds}
     bin_pace: dict[int, list] = {}
     hr_max_obs = 0
-    total_time = 0.0
 
     for a in db.all_activities(conn):
         streams = db.streams_for(conn, a["id"])
@@ -583,27 +677,28 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
             hr_max_obs = max(hr_max_obs, h)
             v = vel[i] if vel and i < len(vel) else None
             pace = 1000 / v if v and v > 0.5 else None
-            z = hr_zone(h)
+            z = hr_zone(h, zone_bounds)
             if z:
-                zone_time[z] += dt
-                total_time += dt
+                stream_zt[z] += dt
                 if pace:
                     zone_pace[z].append(pace)
             if pace:
-                b = int(h // 5 * 5)
-                bin_pace.setdefault(b, []).append(pace)
+                bin_pace.setdefault(int(h // 5 * 5), []).append(pace)
+
+    zone_time = strava_zt if have_strava else stream_zt
+    total_time = sum(zone_time.values())
 
     zones = []
-    for z, (low, high) in HR_ZONES.items():
+    for z, (low, high) in zone_bounds.items():
         paces = zone_pace[z]
         zones.append(
             {
                 "zone": z,
                 "low": low,
                 "high": None if high >= 999 else high,
-                "time_s": round(zone_time[z]),
-                "time_str": format_duration(zone_time[z]),
-                "pct": round(100 * zone_time[z] / total_time, 1) if total_time else 0,
+                "time_s": round(zone_time.get(z, 0)),
+                "time_str": format_duration(zone_time.get(z, 0)),
+                "pct": round(100 * zone_time.get(z, 0) / total_time, 1) if total_time else 0,
                 "avg_pace": format_pace(sum(paces) / len(paces)) if paces else None,
             }
         )

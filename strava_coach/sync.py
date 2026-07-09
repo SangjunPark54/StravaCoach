@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from . import db
@@ -22,8 +23,12 @@ def sync_all() -> int:
         detail = client.get_activity_detail(activity["id"])
         db.update_activity_detail(
             conn, activity["id"], detail.get("suffer_score"),
-            detail.get("best_efforts"), _gap_pace_sec(detail),
+            detail.get("best_efforts"), _gap_pace_sec(detail), detail.get("splits_metric"),
         )
+        try:
+            db.upsert_zones(conn, activity["id"], client.get_activity_zones(activity["id"]))
+        except Exception:
+            pass
         conn.commit()
         count += 1
 
@@ -55,23 +60,33 @@ def _gap_pace_sec(detail: dict) -> float | None:
 
 
 def fetch_details(only_missing: bool = True) -> int:
-    """상세활동(suffer_score, best_efforts, splits GAP)을 활동별로 보강."""
+    """상세활동(suffer_score, best_efforts, splits, GAP) + Strava HR/페이스 존을 활동별로 보강.
+    계정 HR존(/athlete/zones)도 함께 가져와 저장."""
     tokens = refresh_if_needed(STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET)
     client = StravaClient(tokens["access_token"])
     conn = db.get_connection()
 
+    # 계정 HR존 저장 (없으면 활동별 zones에서 유도)
+    try:
+        az = client.get_athlete_zones()
+        db.set_settings(conn, {"athlete_zones": json.dumps(az)})
+    except Exception:
+        pass
+
     count = 0
     for a in db.all_activities(conn):
-        if only_missing and a["suffer_score"] is not None:
+        if only_missing and a["splits_metric"] and db.zones_for(conn, a["id"]):
             continue
         detail = client.get_activity_detail(a["id"])
         db.update_activity_detail(
-            conn,
-            a["id"],
-            detail.get("suffer_score"),
-            detail.get("best_efforts"),
-            _gap_pace_sec(detail),
+            conn, a["id"], detail.get("suffer_score"),
+            detail.get("best_efforts"), _gap_pace_sec(detail), detail.get("splits_metric"),
         )
+        # Strava가 계산한 존 분포(HR/페이스) 저장 — 하드코딩 없이 그대로 사용
+        try:
+            db.upsert_zones(conn, a["id"], client.get_activity_zones(a["id"]))
+        except Exception:
+            pass
         conn.commit()
         count += 1
     return count

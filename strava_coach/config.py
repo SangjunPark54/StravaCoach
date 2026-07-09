@@ -24,13 +24,15 @@ GITHUB_MODELS_ENDPOINT = os.environ.get(
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o")
 
 HR_MAX = 193
-HR_ZONES = {
+# 폴백 전용. 실제로는 Strava /zones에서 받아온 존을 우선 사용(analysis.resolve_hr_zones).
+HR_ZONES_FALLBACK = {
     "Z1": (0, 116),
     "Z2": (116, 135),
     "Z3": (135, 154),
     "Z4": (154, 174),
     "Z5": (174, 999),
 }
+HR_ZONES = HR_ZONES_FALLBACK
 
 GOAL_DISTANCE_KM = 10.0
 GOAL_PACE_SEC_PER_KM = 300  # 5'00"/km

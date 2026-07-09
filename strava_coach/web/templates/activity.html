@@ -89,15 +89,16 @@
     <h2>스플릿 (1km) <span class="muted" style="font-size:0.9rem;font-weight:400;">— {{ a.splits|length }}구간</span></h2>
     <table>
       <thead>
-        <tr><th>km</th><th>구간</th><th>시간</th><th>페이스</th><th>평균HR</th><th>존</th><th>목표 대비</th></tr>
+        <tr><th>km</th><th>시간</th><th>페이스</th><th>GAP</th><th>고도차</th><th>평균HR</th><th>존</th><th>목표 대비</th></tr>
       </thead>
       <tbody>
         {% for s in a.splits %}
         <tr>
           <td>{{ s.km }}</td>
-          <td>{{ s.distance_km }} km</td>
           <td>{{ s.time_str }}</td>
           <td>{{ s.pace_str }}</td>
+          <td>{{ s.gap_pace_str or '—' }}</td>
+          <td>{% if s.elev is not none %}{{ '%+d'|format(s.elev) }}m{% else %}—{% endif %}</td>
           <td>{{ s.avg_hr or '—' }}</td>
           <td>{% if s.zone %}<span class="zone zone-{{ s.zone }}">{{ s.zone }}</span>{% else %}—{% endif %}</td>
           <td class="goal-cell">

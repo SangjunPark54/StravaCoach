@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS streams (
     raw_json TEXT
 );
 
+CREATE TABLE IF NOT EXISTS activity_zones (
+    activity_id INTEGER PRIMARY KEY,
+    raw_json TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sync_state (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -45,7 +50,8 @@ CREATE TABLE IF NOT EXISTS sync_state (
 def _migrate(conn: sqlite3.Connection) -> None:
     """상세활동에서 얻는 필드용 컬럼을 없으면 추가."""
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(activities)")}
-    for col, decl in (("suffer_score", "REAL"), ("best_efforts", "TEXT"), ("gap_pace_sec", "REAL")):
+    for col, decl in (("suffer_score", "REAL"), ("best_efforts", "TEXT"),
+                      ("gap_pace_sec", "REAL"), ("splits_metric", "TEXT")):
         if col not in cols:
             conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {decl}")
 
@@ -60,11 +66,18 @@ def get_connection() -> sqlite3.Connection:
 
 
 def update_activity_detail(
-    conn: sqlite3.Connection, activity_id: int, suffer_score, best_efforts, gap_pace_sec
+    conn: sqlite3.Connection, activity_id: int, suffer_score, best_efforts, gap_pace_sec,
+    splits_metric=None,
 ) -> None:
     conn.execute(
-        "UPDATE activities SET suffer_score=?, best_efforts=?, gap_pace_sec=? WHERE id=?",
-        (suffer_score, json.dumps(best_efforts) if best_efforts else None, gap_pace_sec, activity_id),
+        "UPDATE activities SET suffer_score=?, best_efforts=?, gap_pace_sec=?, splits_metric=? WHERE id=?",
+        (
+            suffer_score,
+            json.dumps(best_efforts) if best_efforts else None,
+            gap_pace_sec,
+            json.dumps(splits_metric) if splits_metric else None,
+            activity_id,
+        ),
     )
 
 
@@ -164,6 +177,25 @@ def laps_for(conn: sqlite3.Connection, activity_id: int) -> list[sqlite3.Row]:
 
 def get_activity(conn: sqlite3.Connection, activity_id: int) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM activities WHERE id = ?", (activity_id,)).fetchone()
+
+
+def upsert_zones(conn: sqlite3.Connection, activity_id: int, zones: list) -> None:
+    conn.execute(
+        "INSERT INTO activity_zones (activity_id, raw_json) VALUES (?, ?) "
+        "ON CONFLICT(activity_id) DO UPDATE SET raw_json=excluded.raw_json",
+        (activity_id, json.dumps(zones)),
+    )
+
+
+def zones_for(conn: sqlite3.Connection, activity_id: int) -> list:
+    row = conn.execute(
+        "SELECT raw_json FROM activity_zones WHERE activity_id = ?", (activity_id,)
+    ).fetchone()
+    return json.loads(row["raw_json"]) if row else []
+
+
+def all_zones(conn: sqlite3.Connection) -> list:
+    return [json.loads(r["raw_json"]) for r in conn.execute("SELECT raw_json FROM activity_zones")]
 
 
 def streams_for(conn: sqlite3.Connection, activity_id: int) -> dict:
