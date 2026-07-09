@@ -12,7 +12,9 @@
     <a href="/sessions">세션 목록</a>
     <a href="/profile">프로파일</a>
     <a href="/plan">다음 훈련 계획</a>
+    {% if not is_hosted %}
     <form action="/sync" method="post"><button type="submit">지금 동기화</button></form>
+    {% endif %}
   </nav>
   <main>
     {% block content %}{% endblock %}

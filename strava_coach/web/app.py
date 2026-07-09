@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import date, timedelta
 from pathlib import Path
@@ -25,6 +26,10 @@ BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(title="Strava Coach")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
+
+# HF Spaces 등 호스팅 환경 여부(HF가 SPACE_ID를 자동 주입). 호스팅에선 로컬 동기화 버튼 숨김.
+IS_HOSTED = bool(os.environ.get("SPACE_ID"))
+templates.env.globals["is_hosted"] = IS_HOSTED
 
 
 @app.get("/healthz")
@@ -202,5 +207,11 @@ def set_goal(
 
 @app.post("/sync")
 def trigger_sync():
-    sync_all()
-    return RedirectResponse(url="/", status_code=303)
+    if IS_HOSTED:
+        # 호스팅 환경엔 Strava 토큰/시크릿이 없음 → 동기화는 로컬 전용
+        return RedirectResponse(url="/?sync=hosted", status_code=303)
+    try:
+        n = sync_all()
+        return RedirectResponse(url=f"/?sync=ok&n={n}", status_code=303)
+    except Exception:
+        return RedirectResponse(url="/?sync=error", status_code=303)

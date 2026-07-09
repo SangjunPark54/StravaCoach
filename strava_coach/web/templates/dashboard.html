@@ -2,6 +2,11 @@
 {% block content %}
   <h1>대시보드</h1>
 
+  {% set sync = request.query_params.get('sync') %}
+  {% if sync == 'ok' %}<p class="warning" style="color:#1f7a3a;background:#eaffea;border:1px solid #bfe6bf;padding:0.6rem 0.9rem;border-radius:8px;">✅ 동기화 완료 — 새 활동 {{ request.query_params.get('n') }}건</p>{% endif %}
+  {% if sync == 'error' %}<p class="warning">⚠️ 동기화 실패 — Strava 토큰/네트워크를 확인하세요.</p>{% endif %}
+  {% if sync == 'hosted' %}<p class="warning">ℹ️ 호스팅 환경에선 동기화가 지원되지 않습니다. 로컬에서 <code>sync</code> 후 DB를 push 하세요.</p>{% endif %}
+
   {% set base = '/' %}
   {% include "_filter.html" %}
 
