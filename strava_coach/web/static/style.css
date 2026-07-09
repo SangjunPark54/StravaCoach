@@ -270,6 +270,6 @@ h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 
 @media (max-width: 640px) { .month-btns { max-width: 90vw; } }
 
 /* --- 월별 추이 --- */
-.month-trends { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin: 0.5rem 0 1rem; }
+.month-trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 0.5rem 0 1rem; }
 .trend-box .sync-canvas { height: 180px; }
 @media (max-width: 720px) { .month-trends { grid-template-columns: 1fr; } }

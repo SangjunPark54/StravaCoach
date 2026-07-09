@@ -89,6 +89,8 @@ def summarize_activities(conn: sqlite3.Connection, activities: list[sqlite3.Row]
                 "avg_pace_str": format_pace(avg_pace),
                 "avg_hr": a["average_heartrate"],
                 "max_hr": a["max_heartrate"],
+                "suffer_score": a["suffer_score"] if "suffer_score" in a.keys() else None,
+                "gap_pace_sec": a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None,
                 "hr_zone": hr_zone(a["average_heartrate"]),
                 "type": classify_session(a, laps),
                 "lap_count": len(laps),
@@ -414,6 +416,43 @@ def weekly_volume(sessions: list[dict], weeks: int = 8) -> list[dict]:
     return [{"week": k, "distance_km": round(v, 1)} for k, v in ordered]
 
 
+_PR_ORDER = ["400m", "1/2 mile", "1K", "1 mile", "2 mile", "5K", "10K",
+             "15K", "10 mile", "20K", "Half-Marathon", "Marathon"]
+
+
+def best_efforts_pr(conn: sqlite3.Connection) -> list[dict]:
+    """전 활동의 best_efforts를 모아 거리별 실제 최고기록(PR)을 산출."""
+    best: dict[str, dict] = {}
+    for a in db.all_activities(conn):
+        raw = a["best_efforts"] if "best_efforts" in a.keys() else None
+        if not raw:
+            continue
+        for e in json.loads(raw):
+            name, t, dist = e.get("name"), e.get("elapsed_time"), e.get("distance")
+            if not name or not t:
+                continue
+            if name not in best or t < best[name]["time"]:
+                best[name] = {
+                    "time": t,
+                    "distance": dist,
+                    "date": a["start_date"][:10] if a["start_date"] else None,
+                    "activity_id": a["id"],
+                }
+    ordered = [n for n in _PR_ORDER if n in best] + [n for n in best if n not in _PR_ORDER]
+    out = []
+    for name in ordered:
+        b = best[name]
+        pace = (b["time"] / (b["distance"] / 1000)) if b["distance"] else None
+        out.append({
+            "name": name,
+            "time_str": format_duration(b["time"]),
+            "pace_str": format_pace(pace),
+            "date": b["date"],
+            "activity_id": b["activity_id"],
+        })
+    return out
+
+
 def monthly_trends(sessions: list[dict]) -> list[dict]:
     """월별 누적거리·평균HR·평균페이스(거리 가중)를 정리해 비교용으로 반환(오름차순)."""
     buckets: dict[str, dict] = {}
@@ -424,12 +463,18 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
         b = buckets.setdefault(
             m,
             {"km": 0.0, "time": 0.0, "hr_wsum": 0.0, "hr_w": 0.0, "n": 0,
-             "max_hr": None, "best_pace": None, "longest": 0.0},
+             "max_hr": None, "best_pace": None, "longest": 0.0,
+             "effort": 0.0, "gap_wsum": 0.0, "gap_w": 0.0},
         )
         km = s["distance_km"] or 0
         b["km"] += km
         b["n"] += 1
         b["longest"] = max(b["longest"], km)
+        if s.get("suffer_score"):
+            b["effort"] += s["suffer_score"]
+        if s.get("gap_pace_sec") and km:
+            b["gap_wsum"] += s["gap_pace_sec"] * km  # 거리 가중 GAP
+            b["gap_w"] += km
         if s["avg_pace"] and km:
             b["time"] += s["avg_pace"] * km  # 총 시간(초) = 페이스 * 거리
             # 최고(가장 빠른) 페이스: 2km 이상 러닝만 후보(짧은 구간 노이즈 제외)
@@ -446,6 +491,7 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
         b = buckets[m]
         avg_pace = (b["time"] / b["km"]) if b["km"] else None
         avg_hr = (b["hr_wsum"] / b["hr_w"]) if b["hr_w"] else None
+        avg_gap = (b["gap_wsum"] / b["gap_w"]) if b["gap_w"] else None
         out.append(
             {
                 "month": m,
@@ -457,8 +503,11 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
                 "avg_pace_str": format_pace(avg_pace),
                 "best_pace_sec": round(b["best_pace"]) if b["best_pace"] else None,
                 "best_pace_str": format_pace(b["best_pace"]),
+                "gap_pace_sec": round(avg_gap) if avg_gap else None,
+                "gap_pace_str": format_pace(avg_gap),
                 "avg_hr": round(avg_hr, 1) if avg_hr else None,
                 "max_hr": round(b["max_hr"]) if b["max_hr"] else None,
+                "rel_effort": round(b["effort"]) if b["effort"] else 0,
             }
         )
     return out

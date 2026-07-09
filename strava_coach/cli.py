@@ -13,6 +13,7 @@ def main() -> None:
     sub.add_parser("sync", help="새 활동 동기화")
     sub.add_parser("serve", help="로컬 웹 대시보드 실행")
     sub.add_parser("refetch-streams", help="기존 활동 스트림 재수집(latlng 포함, 백필HR 보존)")
+    sub.add_parser("fetch-details", help="상세활동 보강(suffer_score, best_efforts, GAP)")
     bf = sub.add_parser("backfill-hr", help="Apple Health XML에서 유실된 HR 백필")
     bf.add_argument("xml_path", help="Apple Health 내보내기 xml 경로")
     bf.add_argument("--all", action="store_true", help="HR 있는 활동도 덮어쓰기")
@@ -30,6 +31,9 @@ def main() -> None:
     elif args.command == "refetch-streams":
         n = sync_module.refetch_streams()
         print(f"{n}건 스트림 재수집 완료.")
+    elif args.command == "fetch-details":
+        n = sync_module.fetch_details()
+        print(f"{n}건 상세 보강 완료.")
     elif args.command == "backfill-hr":
         from . import apple_health
 

@@ -18,22 +18,43 @@
   </section>
   {% endif %}
 
+  {% if prs %}
+  <section>
+    <h2>🏆 최고 기록 (PR) <span class="muted" style="font-size:0.85rem;font-weight:400;">(Strava best efforts · 실제 기록)</span></h2>
+    <table>
+      <thead><tr><th>구간</th><th>기록</th><th>페이스</th><th>달성일</th></tr></thead>
+      <tbody>
+        {% for p in prs %}
+        <tr>
+          <td><strong>{{ p.name }}</strong></td>
+          <td>{{ p.time_str }}</td>
+          <td>{{ p.pace_str }}/km</td>
+          <td><a href="/activity/{{ p.activity_id }}">{{ p.date }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+
   {% if monthly and monthly|length >= 1 %}
   <section>
     <h2>📈 월별 추이 <span class="muted" style="font-size:0.85rem;font-weight:400;">(누적 거리 · 평균 심박 · 평균 페이스 비교)</span></h2>
     <div class="month-trends">
       <div class="trend-box"><span class="sync-label">누적 거리 (km)</span><div class="sync-canvas"><canvas id="mDist"></canvas></div></div>
-      <div class="trend-box"><span class="sync-label">평균 심박 (bpm)</span><div class="sync-canvas"><canvas id="mHr"></canvas></div></div>
-      <div class="trend-box"><span class="sync-label">평균 페이스</span><div class="sync-canvas"><canvas id="mPace"></canvas></div></div>
+      <div class="trend-box"><span class="sync-label">평균/최대 심박 (bpm)</span><div class="sync-canvas"><canvas id="mHr"></canvas></div></div>
+      <div class="trend-box"><span class="sync-label">페이스 (평균/최고/GAP)</span><div class="sync-canvas"><canvas id="mPace"></canvas></div></div>
+      <div class="trend-box"><span class="sync-label">상대 강도 (부하)</span><div class="sync-canvas"><canvas id="mEffort"></canvas></div></div>
     </div>
     <table>
-      <thead><tr><th>월</th><th>세션</th><th>누적거리</th><th>최장런</th><th>평균페이스</th><th>최고페이스</th><th>평균HR</th><th>최대HR</th></tr></thead>
+      <thead><tr><th>월</th><th>세션</th><th>누적거리</th><th>최장런</th><th>평균페이스</th><th>최고페이스</th><th>GAP</th><th>평균HR</th><th>최대HR</th><th>상대강도</th></tr></thead>
       <tbody>
         {% for m in monthly %}
-        <tr><td>{{ m.label }}</td><td>{{ m.sessions }}</td><td>{{ m.total_km }} km</td><td>{{ m.longest_km }} km</td><td>{{ m.avg_pace_str }}</td><td>{{ m.best_pace_str }}</td><td>{{ m.avg_hr or '—' }}</td><td>{{ m.max_hr or '—' }}</td></tr>
+        <tr><td>{{ m.label }}</td><td>{{ m.sessions }}</td><td>{{ m.total_km }} km</td><td>{{ m.longest_km }} km</td><td>{{ m.avg_pace_str }}</td><td>{{ m.best_pace_str }}</td><td>{{ m.gap_pace_str }}</td><td>{{ m.avg_hr or '—' }}</td><td>{{ m.max_hr or '—' }}</td><td>{{ m.rel_effort or '—' }}</td></tr>
         {% endfor %}
       </tbody>
     </table>
+    <p class="muted" style="font-size:0.8rem;">※ 상대 강도(Relative Effort)는 Strava가 심박 기반으로 계산 — 5·6월은 임포트 시 심박이 없어 0입니다.</p>
   </section>
   {% endif %}
 
@@ -111,9 +132,14 @@
       if (document.getElementById('mPace')) new Chart(mPace, { type: 'line',
         data: { labels, datasets: [
           { label: '평균', data: MT.map(m => m.avg_pace_sec), borderColor: '#1f9d55', backgroundColor: 'rgba(31,157,85,.1)', fill: true, tension: 0.3, pointRadius: 4, spanGaps: true },
-          { label: '최고', data: MT.map(m => m.best_pace_sec), borderColor: '#0c5b30', borderDash: [5, 4], fill: false, tension: 0.3, pointRadius: 4, spanGaps: true } ] },
+          { label: '최고', data: MT.map(m => m.best_pace_sec), borderColor: '#0c5b30', borderDash: [5, 4], fill: false, tension: 0.3, pointRadius: 4, spanGaps: true },
+          { label: 'GAP', data: MT.map(m => m.gap_pace_sec), borderColor: '#8a6d3b', borderDash: [2, 3], fill: false, tension: 0.3, pointRadius: 3, spanGaps: true } ] },
         options: noAsp({ plugins: { legend: legendBottom, tooltip: { callbacks: { label: c => c.dataset.label + ' ' + paceFmt(c.parsed.y) + '/km' } } },
           scales: { y: { reverse: true, ticks: { callback: paceFmt } } } }) });
+      if (document.getElementById('mEffort')) new Chart(mEffort, { type: 'bar',
+        data: { labels, datasets: [{ data: MT.map(m => m.rel_effort), backgroundColor: '#7b4fc0' }] },
+        options: noAsp({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => '부하 ' + c.parsed.y } } },
+          scales: { y: { beginAtZero: true } } }) });
     }
   </script>
 {% endblock %}

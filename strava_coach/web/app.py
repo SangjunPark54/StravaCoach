@@ -148,8 +148,11 @@ def profile_view(request: Request):
     profile = analysis.hr_profile(conn)
     races = analysis.race_predictions(sessions)
     monthly = analysis.monthly_trends(sessions)
+    prs = analysis.best_efforts_pr(conn)
     return templates.TemplateResponse(
-        request, "profile.html", {"profile": profile, "races": races, "monthly": monthly}
+        request,
+        "profile.html",
+        {"profile": profile, "races": races, "monthly": monthly, "prs": prs},
     )
 
 

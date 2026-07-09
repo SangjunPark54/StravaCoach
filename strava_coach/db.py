@@ -42,12 +42,30 @@ CREATE TABLE IF NOT EXISTS sync_state (
 """
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """상세활동에서 얻는 필드용 컬럼을 없으면 추가."""
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(activities)")}
+    for col, decl in (("suffer_score", "REAL"), ("best_efforts", "TEXT"), ("gap_pace_sec", "REAL")):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE activities ADD COLUMN {col} {decl}")
+
+
 def get_connection() -> sqlite3.Connection:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     return conn
+
+
+def update_activity_detail(
+    conn: sqlite3.Connection, activity_id: int, suffer_score, best_efforts, gap_pace_sec
+) -> None:
+    conn.execute(
+        "UPDATE activities SET suffer_score=?, best_efforts=?, gap_pace_sec=? WHERE id=?",
+        (suffer_score, json.dumps(best_efforts) if best_efforts else None, gap_pace_sec, activity_id),
+    )
 
 
 def upsert_activity(conn: sqlite3.Connection, activity: dict) -> None:

@@ -19,6 +19,11 @@ def sync_all() -> int:
         db.upsert_activity(conn, activity)
         db.replace_laps(conn, activity["id"], client.get_laps(activity["id"]))
         db.upsert_streams(conn, activity["id"], client.get_streams(activity["id"]))
+        detail = client.get_activity_detail(activity["id"])
+        db.update_activity_detail(
+            conn, activity["id"], detail.get("suffer_score"),
+            detail.get("best_efforts"), _gap_pace_sec(detail),
+        )
         conn.commit()
         count += 1
 
@@ -31,6 +36,44 @@ def sync_all() -> int:
         db.set_sync_anchor(conn, latest_epoch)
         conn.commit()
 
+    return count
+
+
+def _gap_pace_sec(detail: dict) -> float | None:
+    """splits_metric의 경사보정 속도로 활동 전체 GAP 페이스(sec/km)를 거리가중 계산."""
+    splits = detail.get("splits_metric") or []
+    tot_d = tot_t = 0.0
+    for s in splits:
+        d = s.get("distance") or 0
+        gs = s.get("average_grade_adjusted_speed")
+        if d and gs and gs > 0:
+            tot_d += d
+            tot_t += d / gs  # 시간 = 거리 / 속도
+    if not tot_d:
+        return None
+    return round(tot_t / (tot_d / 1000))  # sec/km
+
+
+def fetch_details(only_missing: bool = True) -> int:
+    """상세활동(suffer_score, best_efforts, splits GAP)을 활동별로 보강."""
+    tokens = refresh_if_needed(STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET)
+    client = StravaClient(tokens["access_token"])
+    conn = db.get_connection()
+
+    count = 0
+    for a in db.all_activities(conn):
+        if only_missing and a["suffer_score"] is not None:
+            continue
+        detail = client.get_activity_detail(a["id"])
+        db.update_activity_detail(
+            conn,
+            a["id"],
+            detail.get("suffer_score"),
+            detail.get("best_efforts"),
+            _gap_pace_sec(detail),
+        )
+        conn.commit()
+        count += 1
     return count
 
 
