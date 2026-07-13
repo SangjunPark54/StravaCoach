@@ -85,7 +85,10 @@ COACH_SYSTEM = (
     "}\n"
     "규칙: plan은 today부터 7일. ACWR가 높으면(1.3+) 회복/rest를 넣어 부하를 낮추고, "
     "목표 페이스 격차(pace_gap_sec)가 크면 그 페이스 구간을 threshold/vo2에 구체적으로 배치하세요. "
-    "롱런은 주 1회, 최근 최장거리에서 급격히 늘리지 마세요. 페이스·거리는 사용자 실제 기록 범위에서 현실적으로."
+    "롱런은 주 1회, 최근 최장거리에서 급격히 늘리지 마세요. 페이스·거리는 사용자 실제 기록 범위에서 현실적으로.\n"
+    "★ user_comment가 비어있지 않으면 그 요청을 최우선으로 반영하세요 "
+    "(예: 부상/통증 → 강도 낮추고 회복 위주, 일정/시간 제약 → 세션 길이 조정, 대회 준비 → 특정 세션 강화). "
+    "analysis 텍스트 첫 문장에 코멘트를 어떻게 반영했는지 한 줄로 밝히세요."
 )
 
 
@@ -98,8 +101,9 @@ def _parse_plan(text: str) -> dict:
     return json.loads(t)
 
 
-def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, phase: str) -> dict:
-    """GPT-4o가 실제 세션 데이터(날짜별 타임라인 포함)로 다음 7일 계획을 직접 설계. 실패 시 {'error':...}."""
+def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, phase: str,
+                  user_comment: str = "") -> dict:
+    """GPT-4o가 실제 세션 데이터(+사용자 코멘트)로 다음 7일 계획을 직접 설계. 실패 시 {'error':...}."""
     user_content = json.dumps(
         {
             "goal": goal,
@@ -107,6 +111,7 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
             "recent_days": recent_days,
             "today": today,
             "phase": phase,
+            "user_comment": (user_comment or "").strip(),
         },
         ensure_ascii=False,
     )

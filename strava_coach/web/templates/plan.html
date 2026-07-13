@@ -47,11 +47,15 @@
       <p class="warning">⚠️ 최근 주간 볼륨이 전주 대비 20% 이상 증가했습니다. 부상 위험에 유의하세요.</p>
     {% endif %}
     <h2>🤖 AI 코치 분석 & 맞춤 계획 <span class="muted" style="font-size:0.85rem;font-weight:400;">(GPT-4o)</span></h2>
+    <label for="coachComment" class="muted" style="font-size:0.85rem;display:block;margin-bottom:0.3rem;">코멘트(선택) — 코치에게 요청/상황 전달 (예: 다리가 아파요 / 이번 주 대회 준비 / 시간 없어서 짧게)</label>
+    <textarea id="coachComment" rows="2" style="width:100%;max-width:640px;padding:0.5rem;border:1px solid #ccc;border-radius:6px;margin-bottom:0.6rem;" placeholder="여기에 코멘트를 적으면 계획에 반영됩니다">{% if saved_plan and saved_plan.comment %}{{ saved_plan.comment }}{% endif %}</textarea>
+    <br>
     <button id="askLlmBtn" class="replay-btn">{% if saved_plan %}🔄 다시 생성{% else %}🤖 AI 코치에게 분석 + 계획 요청{% endif %}</button>
-    <p class="muted" style="font-size:0.85rem;">최근 세션 이력·목표를 GPT-4o에 보내 분석하고 다음 7일 계획을 설계합니다. 생성된 계획은 저장되어 다시 열어도 유지됩니다.</p>
+    <p class="muted" style="font-size:0.85rem;">최근 세션 이력·목표{% if true %}·코멘트{% endif %}를 GPT-4o에 보내 분석하고 다음 7일 계획을 설계합니다. 생성된 계획은 저장되어 다시 열어도 유지됩니다.</p>
     <div id="coachResult">
       {% if saved_plan %}
       <p class="muted" style="font-size:0.8rem;">🗓 생성일 {{ saved_plan.generated }}{% if saved_plan.goal %} · 목표 {{ saved_plan.goal.distance_km }}km {{ (saved_plan.goal.pace_sec // 60) }}'{{ '%02d'|format(saved_plan.goal.pace_sec % 60) }}"/km{% endif %}</p>
+      {% if saved_plan.comment %}<p class="muted" style="font-size:0.8rem;">💬 코멘트: {{ saved_plan.comment }}</p>{% endif %}
       {% if saved_plan.analysis_html %}<div class="commentary">{{ saved_plan.analysis_html | safe }}</div>{% endif %}
       {% if saved_plan.focus %}<p class="goal-status"><strong>이번 주 포커스:</strong> {{ saved_plan.focus }}</p>{% endif %}
       {% if saved_plan.plan %}
@@ -79,10 +83,12 @@
       btn.textContent = '⏳ AI 코치 분석 중… (최대 20초)';
       out.innerHTML = '';
       try {
-        const res = await fetch('/api/coach');
+        const comment = (document.getElementById('coachComment').value || '').trim();
+        const res = await fetch('/api/coach?comment=' + encodeURIComponent(comment));
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         let html = '';
+        if (data.comment) html += '<p class="muted" style="font-size:0.8rem;">💬 코멘트: ' + data.comment.replace(/</g,'&lt;') + '</p>';
         if (data.analysis_html) html += '<div class="commentary">' + data.analysis_html + '</div>';
         if (data.focus) html += '<p class="goal-status"><strong>이번 주 포커스:</strong> ' + data.focus + '</p>';
         if (data.plan && data.plan.length) {

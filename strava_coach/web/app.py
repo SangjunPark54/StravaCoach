@@ -204,7 +204,7 @@ def plan_view(request: Request):
 
 
 @app.get("/api/coach")
-def api_coach():
+def api_coach(comment: str = ""):
     from fastapi.responses import JSONResponse
 
     conn = db.get_connection()
@@ -218,7 +218,9 @@ def api_coach():
 
     # 최근 14일을 날짜별(쉰 날 포함) 타임라인으로 AI에 제공
     recent_days = analysis.recent_timeline(sessions, today, days=14)
-    result = coach_llm.generate_plan(ta, goal, recent_days, today.isoformat(), rule_plan["phase"])
+    result = coach_llm.generate_plan(
+        ta, goal, recent_days, today.isoformat(), rule_plan["phase"], user_comment=comment
+    )
     if "error" in result:
         return JSONResponse({"error": result["error"]})
     payload = {
@@ -227,6 +229,7 @@ def api_coach():
         "plan": result.get("plan", []),
         "generated": today.isoformat(),
         "goal": goal,
+        "comment": comment.strip(),
     }
     db.set_settings(conn, {"ai_plan": json.dumps(payload, ensure_ascii=False)})
     conn.commit()
