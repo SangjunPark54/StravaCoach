@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import threading
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -80,8 +82,39 @@ def _apply_range(sessions: list[dict], rng: str) -> list[dict]:
     return sessions
 
 
+AUTO_SYNC_INTERVAL = 1800  # 30분 이내 재동기화 안 함
+_sync_lock = threading.Lock()
+
+
+def _maybe_auto_sync() -> bool:
+    """앱 열 때 백그라운드 자동 동기화(스로틀·중복방지). 시작하면 True."""
+    if not SYNC_ENABLED:
+        return False
+    conn = db.get_connection()
+    last = db.get_state(conn, "last_auto_sync")
+    if last and (time.time() - float(last)) < AUTO_SYNC_INTERVAL:
+        return False
+    if not _sync_lock.acquire(blocking=False):
+        return False  # 이미 동기화 중
+
+    def _run():
+        try:
+            c = db.get_connection()
+            db.set_settings(c, {"last_auto_sync": str(time.time())})
+            c.commit()
+            sync_all()
+        except Exception:
+            pass
+        finally:
+            _sync_lock.release()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return True
+
+
 @app.get("/")
 def dashboard(request: Request, range: str = "all"):
+    auto_syncing = _maybe_auto_sync()
     sessions = _sessions()
     filtered = _apply_range(sessions, range)
 
@@ -98,6 +131,7 @@ def dashboard(request: Request, range: str = "all"):
             "range": range,
             "range_labels": RANGE_LABELS,
             "month_labels": _month_labels(sessions),
+            "auto_syncing": auto_syncing,
         },
     )
 

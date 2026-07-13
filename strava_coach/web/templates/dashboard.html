@@ -2,6 +2,13 @@
 {% block content %}
   <h1>대시보드</h1>
 
+  {% if auto_syncing %}
+  <p class="warning" style="background:#eef5ff;border:1px solid #cfe0ff;color:#1a4b8c;padding:0.6rem 0.9rem;border-radius:8px;">
+    🔄 Strava에서 새 활동을 동기화하는 중입니다… 잠시 후 자동으로 새로고침됩니다.
+  </p>
+  <script>setTimeout(function(){ location.href = '/'; }, 25000);</script>
+  {% endif %}
+
   {% set sync = request.query_params.get('sync') %}
   {% if sync == 'ok' %}<p class="warning" style="color:#1f7a3a;background:#eaffea;border:1px solid #bfe6bf;padding:0.6rem 0.9rem;border-radius:8px;">✅ 동기화 완료 — 새 활동 {{ request.query_params.get('n') }}건</p>{% endif %}
   {% if sync == 'error' %}<p class="warning">⚠️ 동기화 실패 — Strava 토큰/네트워크를 확인하세요.</p>{% endif %}
