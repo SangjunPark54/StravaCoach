@@ -129,7 +129,7 @@ section a { color: #fc4c02; }
 .range-btn.active { background: #fc4c02; color: white; border-color: #fc4c02; }
 
 /* --- 재생(replay) --- */
-.map-wrap { position: relative; }
+.map-wrap { position: relative; overflow: hidden; }
 .hud {
   position: absolute; top: 12px; left: 12px; z-index: 1000;
   background: rgba(20,20,20,0.82); color: #fff;
@@ -234,7 +234,7 @@ h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 
   /* 그래프↔지도 세로 정렬, 지도 sticky 해제 */
   .chart-map-layout { grid-template-columns: 1fr; }
   .map-col { position: static; }
-  .map-col .map-wrap { height: 320px; }
+  .map-col .map-wrap { height: 360px; }
 
   /* 상단 수치/HUD 줄바꿈 */
   .chart-readout { gap: 0.5rem 1rem; font-size: 0.9rem; }
