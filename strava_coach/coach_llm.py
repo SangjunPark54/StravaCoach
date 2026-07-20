@@ -138,6 +138,59 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+INSTANT_SYSTEM = (
+    "당신은 러닝 코치입니다. Strava 'Instant Workouts'처럼, 사용자가 고른 focus와 현재 훈련부하로 "
+    "'오늘 할 운동 1개'만 추천합니다. 입력: focus(build_fitness=체력향상/stay_active=유지/event=대회준비/recover=회복), "
+    "fitness(현재 Fitness·Fatigue·Form; Form 양수=신선/음수=피로), analysis(볼륨·페이스·목표격차), "
+    "recent_days(최근 14일 타임라인, rest=쉼), goal, today, user_comment. 반드시 아래 JSON만 출력:\n"
+    '{"type":"easy|tempo|threshold|vo2|long_run|rest",'
+    '"title":"운동명","detail":"거리·페이스·심박존 구체 지시","duration":"예상 시간(예: 40분)",'
+    '"why":"이 운동을 추천한 이유 1~2문장(Form/피로/focus/최근 이력 근거)"}\n'
+    "규칙: Form이 크게 음수(-15↓)거나 focus=recover면 rest 또는 아주 가벼운 회복 조깅. "
+    "focus=event면 목표 페이스 특이적 세션(threshold/tempo). focus=build_fitness면 부하를 점진적으로. "
+    "어제·그제 연속으로 뛰었으면 회복을 우선. 페이스·거리는 사용자 실제 기록 범위에서 현실적으로. "
+    "user_comment가 있으면 최우선 반영."
+)
+
+
+def instant_workout(analysis: dict, fitness: dict, goal: dict, recent_days: list,
+                    focus: str, today: str, user_comment: str = "") -> dict:
+    """오늘 할 운동 1개 추천(Strava Instant Workouts 대응). 실패 시 {'error':...}."""
+    user_content = json.dumps(
+        {
+            "focus": focus,
+            "fitness": fitness,
+            "analysis": analysis,
+            "recent_days": recent_days,
+            "goal": goal,
+            "today": today,
+            "user_comment": (user_comment or "").strip(),
+        },
+        ensure_ascii=False,
+    )
+    try:
+        if LLM_PROVIDER == "github":
+            if not GITHUB_TOKEN:
+                return {"error": "GITHUB_TOKEN 미설정"}
+            raw = _github_chat(INSTANT_SYSTEM, user_content, max_tokens=500, json_mode=True)
+        elif LLM_PROVIDER == "anthropic":
+            if not ANTHROPIC_API_KEY:
+                return {"error": "ANTHROPIC_API_KEY 미설정"}
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=ANTHROPIC_API_KEY)
+            resp = client.messages.create(
+                model="claude-sonnet-5", max_tokens=500, system=INSTANT_SYSTEM,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            raw = "".join(b.text for b in resp.content if b.type == "text")
+        else:
+            return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
+        return _parse_plan(raw)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def generate_commentary(analysis: dict, plan: dict, goal: dict) -> str:
     user_content = _user_content(analysis, plan, goal)
     try:

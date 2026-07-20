@@ -239,6 +239,24 @@ def api_coach(comment: str = ""):
     return JSONResponse(payload)
 
 
+@app.get("/api/instant")
+def api_instant(focus: str = "build_fitness", comment: str = ""):
+    from fastapi.responses import JSONResponse
+
+    conn = db.get_connection()
+    sessions = _sessions()
+    goal = analysis.resolve_goal(conn)
+    today = date.today()
+    ta = analysis.training_analysis(sessions, goal, today)
+    ta["days_since_last_run"] = analysis.days_since_last_run(sessions, today)
+    recent_days = analysis.recent_timeline(sessions, today, days=14)
+    fitness = analysis.fitness_freshness(conn).get("current")
+    result = coach_llm.instant_workout(
+        ta, fitness, goal, recent_days, focus, today.isoformat(), user_comment=comment
+    )
+    return JSONResponse(result)
+
+
 @app.post("/goal")
 def set_goal(
     goal_distance_km: float = Form(...),

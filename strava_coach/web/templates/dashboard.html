@@ -14,6 +14,45 @@
   {% if sync == 'error' %}<p class="warning">⚠️ 동기화 실패 — Strava 토큰/네트워크를 확인하세요.</p>{% endif %}
   {% if sync == 'hosted' %}<p class="warning">ℹ️ 호스팅 환경에선 동기화가 지원되지 않습니다. 로컬에서 <code>sync</code> 후 DB를 push 하세요.</p>{% endif %}
 
+  <section class="instant-box">
+    <h2>⚡ 오늘의 추천 운동 <span class="muted" style="font-size:0.85rem;font-weight:400;">(포커스 선택 → AI 추천)</span></h2>
+    <div class="focus-row">
+      <button class="focus-btn active" data-focus="build_fitness">💪 체력 향상</button>
+      <button class="focus-btn" data-focus="stay_active">🏃 유지</button>
+      <button class="focus-btn" data-focus="event">🏁 대회 준비</button>
+      <button class="focus-btn" data-focus="recover">😌 회복</button>
+    </div>
+    <button id="instantBtn" class="replay-btn" style="margin-top:0.5rem;">⚡ 추천 받기</button>
+    <div id="instantResult" style="margin-top:0.75rem;"></div>
+  </section>
+
+  <script>
+    (function(){
+      let focus = 'build_fitness';
+      document.querySelectorAll('.focus-btn').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('.focus-btn').forEach(x => x.classList.toggle('active', x === b));
+        focus = b.dataset.focus;
+      }));
+      const btn = document.getElementById('instantBtn');
+      const out = document.getElementById('instantResult');
+      btn.addEventListener('click', async () => {
+        btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 추천 중…';
+        out.innerHTML = '';
+        try {
+          const r = await fetch('/api/instant?focus=' + encodeURIComponent(focus));
+          const d = await r.json();
+          if (d.error) throw new Error(d.error);
+          const type = (d.type||'easy').replace(/[^a-z_]/g,'') || 'easy';
+          out.innerHTML = '<div class="instant-card"><span class="tag tag-'+type+'">'+(d.type||'')+'</span> '+
+            '<strong>'+(d.title||'')+'</strong>'+(d.duration?' <span class="muted">· '+d.duration+'</span>':'')+
+            '<p style="margin:0.4rem 0;">'+(d.detail||'')+'</p>'+
+            (d.why?'<p class="muted" style="font-size:0.85rem;">💡 '+d.why+'</p>':'')+'</div>';
+        } catch(e){ out.innerHTML = '<span style="color:#c0392b">추천 실패: '+e.message+'</span>'; }
+        finally { btn.disabled = false; btn.textContent = t; }
+      });
+    })();
+  </script>
+
   {% set base = '/' %}
   {% include "_filter.html" %}
 

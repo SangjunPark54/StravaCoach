@@ -273,3 +273,10 @@ h1, h2, h3 { word-break: keep-all; overflow-wrap: anywhere; } /* "대시보드" 
 .month-trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 0.5rem 0 1rem; }
 .trend-box .sync-canvas { height: 180px; }
 @media (max-width: 720px) { .month-trends { grid-template-columns: 1fr; } }
+
+/* --- Instant Workout(오늘의 추천 운동) --- */
+.instant-box { background: #fff7f3; border: 1px solid #ffd9c7; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+.focus-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.focus-btn { padding: 0.4rem 0.9rem; border: 1px solid #ddd; border-radius: 999px; background: #fff; cursor: pointer; font-weight: 600; font-size: 0.9rem; color: #555; }
+.focus-btn.active { background: #fc4c02; color: #fff; border-color: #fc4c02; }
+.instant-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 0.9rem 1rem; }
