@@ -52,6 +52,12 @@ class StravaClient:
     def get_athlete_zones(self) -> dict:
         return self._get("/athlete/zones").json()
 
+    def get_athlete(self) -> dict:
+        return self._get("/athlete").json()
+
+    def get_athlete_stats(self, athlete_id: int) -> dict:
+        return self._get(f"/athletes/{athlete_id}/stats").json()
+
     def get_streams(self, activity_id: int) -> dict:
         keys = "time,distance,heartrate,velocity_smooth,altitude,latlng"
         return self._get(

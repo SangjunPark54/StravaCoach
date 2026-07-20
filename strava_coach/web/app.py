@@ -183,10 +183,13 @@ def profile_view(request: Request):
     races = analysis.race_predictions(sessions)
     monthly = analysis.monthly_trends(sessions)
     prs = analysis.best_efforts_pr(conn)
+    stats = analysis.strava_stats(conn)
+    fitness = analysis.fitness_freshness(conn)
     return templates.TemplateResponse(
         request,
         "profile.html",
-        {"profile": profile, "races": races, "monthly": monthly, "prs": prs},
+        {"profile": profile, "races": races, "monthly": monthly, "prs": prs,
+         "stats": stats, "fitness": fitness},
     )
 
 

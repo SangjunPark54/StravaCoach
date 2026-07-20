@@ -3,6 +3,33 @@
   <h1>프로파일 <span class="muted" style="font-size:0.9rem;font-weight:400;">— 전체 세션 데이터 집계</span></h1>
   <p class="muted">누적 심박 기록 시간 {{ profile.total_time_str }}{% if profile.hr_max_observed %} · 관측 최대심박 {{ profile.hr_max_observed }} bpm{% endif %}</p>
 
+  {% if stats %}
+  <section>
+    <h2>📊 Strava 통계 <span class="muted" style="font-size:0.85rem;font-weight:400;">(러닝, 공식 집계)</span></h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">최근 4주</div><div class="stat-val">{{ stats.recent.km }} km<span class="muted" style="font-size:.7rem;display:block;">{{ stats.recent.count }}회 · {{ stats.recent.hours }}h</span></div></div>
+      <div class="stat"><div class="stat-label">올해</div><div class="stat-val">{{ stats.ytd.km }} km<span class="muted" style="font-size:.7rem;display:block;">{{ stats.ytd.count }}회 · {{ stats.ytd.hours }}h</span></div></div>
+      <div class="stat"><div class="stat-label">전체</div><div class="stat-val">{{ stats.all.km }} km<span class="muted" style="font-size:.7rem;display:block;">{{ stats.all.count }}회 · {{ stats.all.hours }}h</span></div></div>
+      <div class="stat"><div class="stat-label">최근 4주 상승고도</div><div class="stat-val">{{ stats.recent.elev }} m</div></div>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if fitness and fitness.current %}
+  <section>
+    <h2>💪 Fitness & Freshness <span class="muted" style="font-size:0.85rem;font-weight:400;">(Relative Effort 기반 훈련부하)</span></h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Fitness(체력)</div><div class="stat-val">{{ fitness.current.fitness }}</div></div>
+      <div class="stat"><div class="stat-label">Fatigue(피로)</div><div class="stat-val">{{ fitness.current.fatigue }}</div></div>
+      <div class="stat"><div class="stat-label">Form(폼)</div><div class="stat-val" style="color:{% if fitness.current.form > 5 %}#1f9d55{% elif fitness.current.form < -5 %}#e0503a{% else %}#333{% endif %}">{{ fitness.current.form }}</div></div>
+    </div>
+    <p class="goal-status"><strong>상태:</strong> {{ fitness.status }}
+      <span class="muted" style="font-size:0.8rem;">— Fitness=42일 누적부하, Fatigue=7일, Form=Fitness−Fatigue (양수=신선/음수=피로)</span></p>
+    <div class="sync-canvas" style="height:220px;"><canvas id="ffChart"></canvas></div>
+    <p class="muted" style="font-size:0.8rem;">※ Relative Effort(심박 기반)가 있는 기간만 계산됩니다(7월~). 데이터가 쌓일수록 정확해집니다.</p>
+  </section>
+  {% endif %}
+
   {% if races.predictions %}
   <section>
     <h2>🏁 예상 레이스 페이스 <span class="muted" style="font-size:0.85rem;font-weight:400;">(최고 기록 기반 · Riegel 예측)</span></h2>
@@ -98,6 +125,21 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     const paceFmt = s => { s = Math.round(s); return Math.floor(s/60) + "'" + String(s%60).padStart(2,'0') + '"'; };
+
+    const FF = {{ (fitness.series if fitness else []) | tojson }};
+    if (FF && FF.length && document.getElementById('ffChart')) {
+      new Chart(document.getElementById('ffChart'), {
+        type: 'line',
+        data: { labels: FF.map(x => x.date), datasets: [
+          { label: 'Fitness(체력)', data: FF.map(x => x.fitness), borderColor: '#1f6fd9', backgroundColor: 'rgba(31,111,217,.08)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+          { label: 'Fatigue(피로)', data: FF.map(x => x.fatigue), borderColor: '#e0503a', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+          { label: 'Form(폼)', data: FF.map(x => x.form), borderColor: '#8a6d3b', borderDash: [4,3], fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5 },
+        ] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+          scales: { x: { ticks: { maxTicksLimit: 8 } } } },
+      });
+    }
 
     const HP = {{ profile.hr_pace | tojson }};
     if (HP && HP.length && document.getElementById('hrPaceChart')) {

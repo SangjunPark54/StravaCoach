@@ -674,6 +674,72 @@ def race_predictions(sessions: list[dict], distances_km=(5, 10)) -> dict:
     return {"predictions": predictions}
 
 
+def strava_stats(conn: sqlite3.Connection) -> Optional[dict]:
+    """Strava 공식 러닝 통계(/athlete/stats)를 읽어 반환."""
+    raw = db.get_state(conn, "athlete_stats")
+    if not raw:
+        return None
+    st = json.loads(raw)
+
+    def fmt(t):
+        return {
+            "count": t.get("count") or 0,
+            "km": round((t.get("distance") or 0) / 1000, 1),
+            "hours": round((t.get("moving_time") or 0) / 3600, 1),
+            "elev": round(t.get("elevation_gain") or 0),
+        }
+
+    return {
+        "recent": fmt(st.get("recent_run_totals") or {}),   # 최근 4주
+        "ytd": fmt(st.get("ytd_run_totals") or {}),         # 올해
+        "all": fmt(st.get("all_run_totals") or {}),         # 전체
+    }
+
+
+def fitness_freshness(conn: sqlite3.Connection, today: Optional[date] = None) -> dict:
+    """Relative Effort(suffer_score)로 Fitness(CTL,42d)·Fatigue(ATL,7d)·Form(TSB) 계산.
+    Strava Summit의 Fitness & Freshness와 동일한 지수가중이동평균 모델."""
+    today = today or date.today()
+    daily: dict[str, float] = {}
+    for a in db.all_activities(conn):
+        ss = a["suffer_score"] if "suffer_score" in a.keys() else None
+        if a["start_date"] and ss:
+            d = a["start_date"][:10]
+            daily[d] = daily.get(d, 0.0) + ss
+    if not daily:
+        return {"series": [], "current": None, "status": None}
+
+    kc, ka = 1 / 42, 1 / 7
+    ctl = atl = prev_ctl = prev_atl = 0.0
+    d = date.fromisoformat(min(daily))
+    series = []
+    while d <= today:
+        re = daily.get(d.isoformat(), 0.0)
+        form = prev_ctl - prev_atl  # 표준 TSB = 어제의 Fitness - Fatigue
+        ctl = ctl + (re - ctl) * kc
+        atl = atl + (re - atl) * ka
+        series.append({
+            "date": d.isoformat(),
+            "fitness": round(ctl, 1),
+            "fatigue": round(atl, 1),
+            "form": round(form, 1),
+        })
+        prev_ctl, prev_atl = ctl, atl
+        d += timedelta(days=1)
+
+    cur = series[-1]
+    f = cur["form"]
+    if f > 5:
+        status = "신선함 — 고강도 세션 소화 가능"
+    elif f < -15:
+        status = "피로 누적 — 회복·감량 필요"
+    elif f < -5:
+        status = "부하 쌓이는 중 — 무리 주의"
+    else:
+        status = "균형 — 유지"
+    return {"series": series, "current": cur, "status": status}
+
+
 def hr_profile(conn: sqlite3.Connection) -> dict:
     """존별 시간(=Strava 계산값)과 존별/심박별 평균페이스를 집계. HR존은 Strava에서 가져옴."""
     zone_bounds = resolve_hr_zones(conn)

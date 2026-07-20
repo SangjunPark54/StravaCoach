@@ -41,7 +41,19 @@ def sync_all() -> int:
         db.set_sync_anchor(conn, latest_epoch)
         conn.commit()
 
+    _fetch_athlete_stats(client, conn)
     return count
+
+
+def _fetch_athlete_stats(client, conn) -> None:
+    """Strava 공식 통계(/athlete/stats) 저장."""
+    try:
+        me = client.get_athlete()
+        stats = client.get_athlete_stats(me["id"])
+        db.set_settings(conn, {"athlete_stats": json.dumps(stats)})
+        conn.commit()
+    except Exception:
+        pass
 
 
 def _gap_pace_sec(detail: dict) -> float | None:
@@ -66,12 +78,13 @@ def fetch_details(only_missing: bool = True) -> int:
     client = StravaClient(tokens["access_token"])
     conn = db.get_connection()
 
-    # 계정 HR존 저장 (없으면 활동별 zones에서 유도)
+    # 계정 HR존 + Strava 공식 통계 저장
     try:
         az = client.get_athlete_zones()
         db.set_settings(conn, {"athlete_zones": json.dumps(az)})
     except Exception:
         pass
+    _fetch_athlete_stats(client, conn)
 
     count = 0
     for a in db.all_activities(conn):
