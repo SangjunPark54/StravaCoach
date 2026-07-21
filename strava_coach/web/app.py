@@ -138,6 +138,7 @@ def dashboard(request: Request, range: str = "all"):
 
 @app.get("/sessions")
 def sessions_view(request: Request, range: str = "all"):
+    _maybe_auto_sync()
     sessions = _sessions()
     filtered = _apply_range(sessions, range)
     total_km = round(sum(s["distance_km"] for s in filtered), 1)
@@ -177,6 +178,7 @@ def _plan_context():
 
 @app.get("/profile")
 def profile_view(request: Request):
+    _maybe_auto_sync()
     conn = db.get_connection()
     sessions = _sessions()
     profile = analysis.hr_profile(conn)
