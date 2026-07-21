@@ -248,8 +248,14 @@ def api_coach(comment: str = ""):
         "weather": forecast,
     }
     db.set_user_values({"ai_plan": json.dumps(payload, ensure_ascii=False)})
-    state_sync.push_state()  # GitHub state 브랜치에 영속화(재시작 보존)
-    return JSONResponse(payload)
+    # GitHub state 브랜치에 영속화(재시작 보존). 실패 시 UI에 경고(전송만, 저장 안 함).
+    persisted = state_sync.push_state()
+    resp = dict(payload)
+    resp["persist_warn"] = (
+        "" if persisted or not state_sync.enabled()
+        else "⚠️ GitHub 저장 실패 — GITHUB_STATE_TOKEN(repo 스코프)이 없어 재시작 시 이 계획이 사라질 수 있습니다."
+    )
+    return JSONResponse(resp)
 
 
 @app.get("/api/instant")

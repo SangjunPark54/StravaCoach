@@ -102,6 +102,7 @@
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         let html = '';
+        if (data.persist_warn) html += '<p style="background:#fff4e5;border:1px solid #ffd9a8;color:#8a5a00;padding:0.5rem 0.7rem;border-radius:6px;font-size:0.85rem;">' + data.persist_warn + '</p>';
         if (data.comment) html += '<p class="muted" style="font-size:0.8rem;">💬 코멘트: ' + data.comment.replace(/</g,'&lt;') + '</p>';
         if (data.weather && data.weather.length) {
           html += '<div class="wx-strip"><span class="wx-label">🌦 서울 예보</span>';

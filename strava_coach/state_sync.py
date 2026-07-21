@@ -52,20 +52,38 @@ def _get_remote() -> tuple[dict | None, str | None]:
         return None, j["sha"]
 
 
+def _plan_generated(state: dict) -> str:
+    """user_state의 ai_plan.generated(YYYY-MM-DD) 추출. 없으면 ''."""
+    raw = (state or {}).get("ai_plan")
+    if not raw:
+        return ""
+    try:
+        return json.loads(raw).get("generated", "") or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def pull_state() -> bool:
-    """GitHub state 브랜치의 user_state.json을 로컬에 반영. 성공 시 True."""
+    """GitHub state 브랜치의 user_state.json을 로컬에 반영. 성공 시 True.
+
+    newer-wins: 로컬 ai_plan이 원격보다 최신이면 로컬을 보존한다(옛 시드가
+    더 새 계획을 덮어써 롤백되는 것을 방지). 그 외 키는 로컬 우선, 없으면 원격.
+    """
     if not enabled():
         return False
     try:
         remote, _ = _get_remote()
         if not remote:
             return False
-        # 로컬 파일에 병합(원격 우선). 로컬에만 있는 키는 보존.
         local = db._load_user_state()
-        local.update(remote)
+        merged = dict(remote)          # 원격을 바탕으로
+        merged.update(local)           # 로컬에 있는 값이 우선(런타임 저장분 보존)
+        # ai_plan은 생성일 비교로 더 최신을 채택
+        if _plan_generated(remote) > _plan_generated(local) and remote.get("ai_plan"):
+            merged["ai_plan"] = remote["ai_plan"]
         db.USER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         db.USER_STATE_PATH.write_text(
-            json.dumps(local, ensure_ascii=False), encoding="utf-8"
+            json.dumps(merged, ensure_ascii=False), encoding="utf-8"
         )
         return True
     except Exception as e:  # noqa: BLE001
