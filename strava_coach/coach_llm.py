@@ -89,11 +89,16 @@ COACH_SYSTEM = (
     "★ user_comment가 비어있지 않으면 그 요청을 최우선으로 반영하세요 "
     "(예: 부상/통증 → 강도 낮추고 회복 위주, 일정/시간 제약 → 세션 길이 조정, 대회 준비 → 특정 세션 강화). "
     "analysis 텍스트 첫 문장에 코멘트를 어떻게 반영했는지 한 줄로 밝히세요.\n"
-    "★ weather(일별 강수 예보: date별 precip_mm 강수량·precip_prob 강수확률·summary·rainy)가 주어지면 "
-    "반드시 실제 예보로 배치하세요. rainy=true(강수량 많음)인 날은 야외 퀄리티 세션을 피하고 rest 또는 "
-    "가벼운 조깅/실내 대체(트레드밀·크로스트레이닝)로, rainy=false거나 강수량이 가장 적은 날에 롱런·threshold·vo2 "
-    "같은 핵심 야외 세션을 배치하세요. 각 세션 detail 끝에 그날 예보(예: '강수 2mm/확률78%')를 근거로 덧붙이고, "
-    "장마처럼 모든 날이 비면 강수량이 가장 적은 날을 골라 야외로, 나머지는 실내/회복으로 조정하세요."
+    "★★ 사용자는 100% 야외(실외) 러닝만 합니다. 트레드밀·실내·크로스트레이닝 대체를 "
+    "절대로 추천하지 마세요('트레드밀에서 시행' 같은 문구 금지). "
+    "weather는 일별 예보이며 각 항목에 date·precip_mm(하루 강수량)·dry_windows(야외 러닝 가능한 건조 시간대 목록, "
+    "예: ['05-07시','18-22시'])·dry_note(건조 구간이 없을 때만 채워지는 안내)가 있습니다. "
+    "규칙: (1) 모든 러닝 세션은 그날 dry_windows 안의 시간에 배치하고, detail 끝에 '(권장 시간: 18-22시, 비 없음)'처럼 "
+    "구체 시간을 반드시 명시하세요. (2) 핵심 세션(long_run·threshold·vo2)은 건조 시간대가 넉넉한 날에 배치하세요. "
+    "(3) dry_windows가 빈 날(종일 비)에는 그 날짜의 type을 반드시 'rest'로만 두세요. 그 날짜에 "
+    "easy·tempo·threshold·vo2·long_run 같은 러닝을 두는 것은 금지이며, 그런 세션은 dry_windows가 있는 다른 날로 "
+    "반드시 옮기세요(실내 대체 금지). long_run은 dry_windows가 가장 긴 날에 배치하세요. "
+    "(4) rest는 비를 피할 수 없는 '종일 비'인 날에 우선 배치하세요. 강수량 많은 날이라도 dry_windows가 있으면 그 시간엔 야외 러닝 가능합니다."
 )
 
 
@@ -104,6 +109,22 @@ def _parse_plan(text: str) -> dict:
     if t.startswith("```"):
         t = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", t).strip()
     return json.loads(t)
+
+
+def _enforce_outdoor_weather(plan: list, weather: list | None) -> list:
+    """야외 전용 보정: 건조 시간대(dry_windows)가 없는 '종일 비' 날짜의 러닝은 rest로 강제.
+
+    LLM이 규칙을 어겨 종일 비인 날에 러닝을 넣는 경우를 코드로 확정 차단한다.
+    """
+    if not weather:
+        return plan
+    no_dry = {w["date"] for w in weather if not w.get("dry_windows")}
+    for item in plan:
+        if item.get("date") in no_dry and item.get("type") != "rest":
+            item["type"] = "rest"
+            item["title"] = "완전 휴식 (종일 비)"
+            item["detail"] = "종일 비 예보로 야외 러닝 불가 — 휴식일로 조정했습니다."
+    return plan
 
 
 def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, phase: str,
@@ -139,7 +160,10 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
             raw = "".join(b.text for b in resp.content if b.type == "text")
         else:
             return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
-        return _parse_plan(raw)
+        result = _parse_plan(raw)
+        if isinstance(result.get("plan"), list):
+            result["plan"] = _enforce_outdoor_weather(result["plan"], weather)
+        return result
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}"}
 

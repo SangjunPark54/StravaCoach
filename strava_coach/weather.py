@@ -34,6 +34,40 @@ def _rainy(precip_mm: float, prob: float) -> bool:
     return bool(prob is not None and prob >= 60)
 
 
+# 러닝 가능 시간대(05~22시)와 '건조' 임계값(mm/h)
+RUN_HOUR_START = 5
+RUN_HOUR_END = 22
+DRY_MM_PER_H = 0.1
+
+
+def _dry_windows(hours: list[tuple]) -> tuple[list[str], str]:
+    """(hour, precip_mm) 목록에서 러닝시간대의 건조 구간을 'HH-HH'로 병합.
+
+    반환: (구간 리스트, 폴백 문구). 건조 구간 없으면 리스트 빈값 + 가장 약한 시간 안내.
+    """
+    windows = []
+    start = None
+    for hh, mm in hours:
+        if not (RUN_HOUR_START <= hh <= RUN_HOUR_END):
+            continue
+        dry = (mm or 0) <= DRY_MM_PER_H
+        if dry and start is None:
+            start = hh
+        elif not dry and start is not None:
+            windows.append(f"{start:02d}-{hh:02d}시")
+            start = None
+    if start is not None:
+        windows.append(f"{start:02d}-{RUN_HOUR_END:02d}시")
+    if windows:
+        return windows, ""
+    # 건조 구간 없음 → 러닝시간대 중 강수 가장 약한 시간
+    run_hours = [(hh, mm or 0) for hh, mm in hours if RUN_HOUR_START <= hh <= RUN_HOUR_END]
+    if run_hours:
+        best_h, best_mm = min(run_hours, key=lambda x: x[1])
+        return [], f"종일 비 — 가장 약한 {best_h:02d}시({best_mm:.1f}mm/h)"
+    return [], "예보 없음"
+
+
 def seoul_forecast(days: int = 7) -> list[dict]:
     """일별 예보 리스트. 각 항목: date, precip_mm, precip_prob, temp_min/max, code, summary, rainy."""
     try:
@@ -44,18 +78,27 @@ def seoul_forecast(days: int = 7) -> list[dict]:
                 "longitude": WEATHER_LON,
                 "daily": "precipitation_probability_max,precipitation_sum,"
                 "weathercode,temperature_2m_max,temperature_2m_min",
+                "hourly": "precipitation",
                 "timezone": "Asia/Seoul",
                 "forecast_days": max(1, min(days, 16)),
             },
             timeout=20,
         )
         r.raise_for_status()
-        d = r.json()["daily"]
+        j = r.json()
+        d = j["daily"]
+        # 시간별 강수를 날짜별로 그룹핑(건조 시간대 계산용)
+        hourly = j.get("hourly", {})
+        by_date: dict[str, list] = {}
+        for ts, pmm in zip(hourly.get("time", []), hourly.get("precipitation", [])):
+            date_key, hh = ts[:10], int(ts[11:13])
+            by_date.setdefault(date_key, []).append((hh, pmm))
         out = []
         for i, day in enumerate(d["time"]):
             mm = d["precipitation_sum"][i]
             prob = d["precipitation_probability_max"][i]
             code = d["weathercode"][i]
+            windows, fallback = _dry_windows(sorted(by_date.get(day, [])))
             out.append(
                 {
                     "date": day,
@@ -66,6 +109,8 @@ def seoul_forecast(days: int = 7) -> list[dict]:
                     "code": code,
                     "summary": _WMO.get(code, f"code {code}"),
                     "rainy": _rainy(mm, prob),
+                    "dry_windows": windows,          # 야외 러닝 가능한 건조 시간대
+                    "dry_note": fallback,            # 건조 구간 없을 때 안내
                 }
             )
         return out

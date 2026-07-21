@@ -5,6 +5,7 @@
     .wx-label { font-size:0.8rem; font-weight:600; color:#555; margin-right:0.2rem; }
     .wx-day { font-size:0.78rem; padding:0.2rem 0.5rem; border-radius:6px; background:#eef4ff; border:1px solid #d5e2f7; color:#24507f; white-space:nowrap; }
     .wx-day.wx-rain { background:#eef1f4; border-color:#d3d9df; color:#5a6672; }
+    .wx-mm { opacity:0.6; font-size:0.72rem; }
   </style>
   <h1>다음 훈련 계획</h1>
 
@@ -64,9 +65,9 @@
       {% if saved_plan.comment %}<p class="muted" style="font-size:0.8rem;">💬 코멘트: {{ saved_plan.comment }}</p>{% endif %}
       {% if saved_plan.weather %}
       <div class="wx-strip">
-        <span class="wx-label">🌦 서울 예보</span>
+        <span class="wx-label">🌦 서울 예보 · 야외 러닝 건조 시간대</span>
         {% for w in saved_plan.weather %}
-        <span class="wx-day{% if w.rainy %} wx-rain{% endif %}">{{ w.date[5:] }} {% if w.rainy %}🌧{% else %}☀️{% endif %} {{ w.precip_mm }}mm·{{ w.precip_prob }}%</span>
+        <span class="wx-day{% if not w.dry_windows %} wx-rain{% endif %}">{{ w.date[5:] }} {% if w.dry_windows %}☀️ {{ w.dry_windows|join(', ') }}{% else %}🌧 {{ w.dry_note }}{% endif %} <span class="wx-mm">({{ w.precip_mm }}mm)</span></span>
         {% endfor %}
       </div>
       {% endif %}
@@ -105,10 +106,12 @@
         if (data.persist_warn) html += '<p style="background:#fff4e5;border:1px solid #ffd9a8;color:#8a5a00;padding:0.5rem 0.7rem;border-radius:6px;font-size:0.85rem;">' + data.persist_warn + '</p>';
         if (data.comment) html += '<p class="muted" style="font-size:0.8rem;">💬 코멘트: ' + data.comment.replace(/</g,'&lt;') + '</p>';
         if (data.weather && data.weather.length) {
-          html += '<div class="wx-strip"><span class="wx-label">🌦 서울 예보</span>';
+          html += '<div class="wx-strip"><span class="wx-label">🌦 서울 예보 · 야외 러닝 건조 시간대</span>';
           for (const w of data.weather) {
-            html += '<span class="wx-day' + (w.rainy?' wx-rain':'') + '">' + (w.date||'').slice(5) + ' ' +
-              (w.rainy?'🌧':'☀️') + ' ' + w.precip_mm + 'mm·' + w.precip_prob + '%</span>';
+            const dry = (w.dry_windows && w.dry_windows.length);
+            const label = dry ? ('☀️ ' + w.dry_windows.join(', ')) : ('🌧 ' + (w.dry_note||''));
+            html += '<span class="wx-day' + (dry?'':' wx-rain') + '">' + (w.date||'').slice(5) + ' ' +
+              label + ' <span class="wx-mm">(' + w.precip_mm + 'mm)</span></span>';
           }
           html += '</div>';
         }
