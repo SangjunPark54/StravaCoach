@@ -23,6 +23,15 @@ GITHUB_MODELS_ENDPOINT = os.environ.get(
 )
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o")
 
+# ── 사용자 상태(목표·AI계획) GitHub 영속화 ──────────────────────────
+# user_state.json을 GitHub repo의 별도 브랜치에 저장 → HF 재시작에도 보존.
+# 앱 기동 시 pull, 목표/계획 저장 시 push. 토큰은 repo(contents write) 스코프 필요.
+STATE_REPO = os.environ.get("STATE_REPO", "SangjunPark54/StravaCoach")
+STATE_BRANCH = os.environ.get("STATE_BRANCH", "state")
+STATE_FILE = os.environ.get("STATE_FILE", "user_state.json")
+# 상태 저장 전용 토큰(repo 스코프). 없으면 GITHUB_TOKEN 사용(그 경우 GITHUB_TOKEN이 repo 스코프여야 함).
+GITHUB_STATE_TOKEN = os.environ.get("GITHUB_STATE_TOKEN", "") or GITHUB_TOKEN
+
 HR_MAX = 193
 # 폴백 전용. 실제로는 Strava /zones에서 받아온 존을 우선 사용(analysis.resolve_hr_zones).
 HR_ZONES_FALLBACK = {

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from .. import analysis, coach_llm, db, planner
+from .. import analysis, coach_llm, db, planner, state_sync
 from ..sync import sync_all
 
 
@@ -43,6 +43,14 @@ SYNC_ENABLED = bool(
     and (TOKEN_FILE.exists() or os.environ.get("STRAVA_REFRESH_TOKEN"))
 )
 templates.env.globals["sync_enabled"] = SYNC_ENABLED
+
+
+@app.on_event("startup")
+def _pull_user_state():
+    """기동 시 GitHub state 브랜치에서 목표·AI계획을 가져와 반영(재시작 보존)."""
+    if state_sync.enabled():
+        ok = state_sync.pull_state()
+        print(f"[state_sync] 기동 pull: {'반영됨' if ok else '스킵/없음'}")
 
 
 @app.get("/healthz")
@@ -237,6 +245,7 @@ def api_coach(comment: str = ""):
         "comment": comment.strip(),
     }
     db.set_user_values({"ai_plan": json.dumps(payload, ensure_ascii=False)})
+    state_sync.push_state()  # GitHub state 브랜치에 영속화(재시작 보존)
     return JSONResponse(payload)
 
 
@@ -272,6 +281,7 @@ def set_goal(
             "goal_date": goal_date,
         }
     )
+    state_sync.push_state()  # GitHub state 브랜치에 영속화(재시작 보존)
     return RedirectResponse(url="/plan", status_code=303)
 
 
