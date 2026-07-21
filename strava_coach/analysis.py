@@ -821,9 +821,33 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
         if len(v) >= 3  # 1km 구간 표본 3개 이상
     ]
 
+    # 런 단위 점(산점도): 각 러닝의 평균심박 → 평균페이스(GAP 우선).
+    #  km 단위 집계는 조깅 후반 심박 드리프트로 왜곡되므로, 런 1개=1점으로 본다.
+    hr_pace_runs = []
+    for a in db.all_activities(conn):
+        hr = a["average_heartrate"]
+        spd = a["average_speed"]
+        dist = a["distance_m"]
+        if not hr or not spd or not dist or dist < 1500:
+            continue  # 심박/속도 없거나 1.5km 미만 런은 제외
+        gap = a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None
+        pace = gap or (1000 / spd)
+        hr_pace_runs.append(
+            {
+                "date": (a["start_date"] or "")[:10],
+                "hr": round(hr),
+                "pace_sec": round(pace),
+                "pace_str": format_pace(pace),
+                "distance_km": round(dist / 1000, 1),
+                "gap": gap is not None,
+            }
+        )
+    hr_pace_runs.sort(key=lambda r: r["hr"])
+
     return {
         "zones": zones,
         "hr_pace": hr_pace,
+        "hr_pace_runs": hr_pace_runs,
         "hr_max_observed": round(hr_max_obs) if hr_max_obs else None,
         "total_time_str": format_duration(total_time),
     }
