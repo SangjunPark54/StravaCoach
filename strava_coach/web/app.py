@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
 
-from .. import analysis, coach_llm, db, planner, state_sync
+from .. import analysis, coach_llm, db, planner, state_sync, weather
 from ..sync import sync_all
 
 
@@ -231,8 +231,10 @@ def api_coach(comment: str = ""):
 
     # 최근 14일을 날짜별(쉰 날 포함) 타임라인으로 AI에 제공
     recent_days = analysis.recent_timeline(sessions, today, days=14)
+    forecast = weather.seoul_forecast(days=7)  # 실제 강수 예보로 비 안 오는 날 배치
     result = coach_llm.generate_plan(
-        ta, goal, recent_days, today.isoformat(), rule_plan["phase"], user_comment=comment
+        ta, goal, recent_days, today.isoformat(), rule_plan["phase"],
+        user_comment=comment, weather=forecast,
     )
     if "error" in result:
         return JSONResponse({"error": result["error"]})
@@ -243,6 +245,7 @@ def api_coach(comment: str = ""):
         "generated": today.isoformat(),
         "goal": goal,
         "comment": comment.strip(),
+        "weather": forecast,
     }
     db.set_user_values({"ai_plan": json.dumps(payload, ensure_ascii=False)})
     state_sync.push_state()  # GitHub state 브랜치에 영속화(재시작 보존)

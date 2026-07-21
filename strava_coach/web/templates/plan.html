@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
+  <style>
+    .wx-strip { display:flex; flex-wrap:wrap; gap:0.35rem; align-items:center; margin:0.5rem 0 0.7rem; }
+    .wx-label { font-size:0.8rem; font-weight:600; color:#555; margin-right:0.2rem; }
+    .wx-day { font-size:0.78rem; padding:0.2rem 0.5rem; border-radius:6px; background:#eef4ff; border:1px solid #d5e2f7; color:#24507f; white-space:nowrap; }
+    .wx-day.wx-rain { background:#eef1f4; border-color:#d3d9df; color:#5a6672; }
+  </style>
   <h1>다음 훈련 계획</h1>
 
   <section class="goal-box">
@@ -56,6 +62,14 @@
       {% if saved_plan %}
       <p class="muted" style="font-size:0.8rem;">🗓 생성일 {{ saved_plan.generated }}{% if saved_plan.goal %} · 목표 {{ saved_plan.goal.distance_km }}km {{ (saved_plan.goal.pace_sec // 60) }}'{{ '%02d'|format(saved_plan.goal.pace_sec % 60) }}"/km{% endif %}</p>
       {% if saved_plan.comment %}<p class="muted" style="font-size:0.8rem;">💬 코멘트: {{ saved_plan.comment }}</p>{% endif %}
+      {% if saved_plan.weather %}
+      <div class="wx-strip">
+        <span class="wx-label">🌦 서울 예보</span>
+        {% for w in saved_plan.weather %}
+        <span class="wx-day{% if w.rainy %} wx-rain{% endif %}">{{ w.date[5:] }} {% if w.rainy %}🌧{% else %}☀️{% endif %} {{ w.precip_mm }}mm·{{ w.precip_prob }}%</span>
+        {% endfor %}
+      </div>
+      {% endif %}
       {% if saved_plan.analysis_html %}<div class="commentary">{{ saved_plan.analysis_html | safe }}</div>{% endif %}
       {% if saved_plan.focus %}<p class="goal-status"><strong>이번 주 포커스:</strong> {{ saved_plan.focus }}</p>{% endif %}
       {% if saved_plan.plan %}
@@ -89,6 +103,14 @@
         if (data.error) throw new Error(data.error);
         let html = '';
         if (data.comment) html += '<p class="muted" style="font-size:0.8rem;">💬 코멘트: ' + data.comment.replace(/</g,'&lt;') + '</p>';
+        if (data.weather && data.weather.length) {
+          html += '<div class="wx-strip"><span class="wx-label">🌦 서울 예보</span>';
+          for (const w of data.weather) {
+            html += '<span class="wx-day' + (w.rainy?' wx-rain':'') + '">' + (w.date||'').slice(5) + ' ' +
+              (w.rainy?'🌧':'☀️') + ' ' + w.precip_mm + 'mm·' + w.precip_prob + '%</span>';
+          }
+          html += '</div>';
+        }
         if (data.analysis_html) html += '<div class="commentary">' + data.analysis_html + '</div>';
         if (data.focus) html += '<p class="goal-status"><strong>이번 주 포커스:</strong> ' + data.focus + '</p>';
         if (data.plan && data.plan.length) {

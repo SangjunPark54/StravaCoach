@@ -88,7 +88,12 @@ COACH_SYSTEM = (
     "롱런은 주 1회, 최근 최장거리에서 급격히 늘리지 마세요. 페이스·거리는 사용자 실제 기록 범위에서 현실적으로.\n"
     "★ user_comment가 비어있지 않으면 그 요청을 최우선으로 반영하세요 "
     "(예: 부상/통증 → 강도 낮추고 회복 위주, 일정/시간 제약 → 세션 길이 조정, 대회 준비 → 특정 세션 강화). "
-    "analysis 텍스트 첫 문장에 코멘트를 어떻게 반영했는지 한 줄로 밝히세요."
+    "analysis 텍스트 첫 문장에 코멘트를 어떻게 반영했는지 한 줄로 밝히세요.\n"
+    "★ weather(일별 강수 예보: date별 precip_mm 강수량·precip_prob 강수확률·summary·rainy)가 주어지면 "
+    "반드시 실제 예보로 배치하세요. rainy=true(강수량 많음)인 날은 야외 퀄리티 세션을 피하고 rest 또는 "
+    "가벼운 조깅/실내 대체(트레드밀·크로스트레이닝)로, rainy=false거나 강수량이 가장 적은 날에 롱런·threshold·vo2 "
+    "같은 핵심 야외 세션을 배치하세요. 각 세션 detail 끝에 그날 예보(예: '강수 2mm/확률78%')를 근거로 덧붙이고, "
+    "장마처럼 모든 날이 비면 강수량이 가장 적은 날을 골라 야외로, 나머지는 실내/회복으로 조정하세요."
 )
 
 
@@ -102,8 +107,8 @@ def _parse_plan(text: str) -> dict:
 
 
 def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, phase: str,
-                  user_comment: str = "") -> dict:
-    """GPT-4o가 실제 세션 데이터(+사용자 코멘트)로 다음 7일 계획을 직접 설계. 실패 시 {'error':...}."""
+                  user_comment: str = "", weather: list | None = None) -> dict:
+    """GPT-4o가 실제 세션 데이터(+사용자 코멘트+날씨 예보)로 다음 7일 계획을 직접 설계. 실패 시 {'error':...}."""
     user_content = json.dumps(
         {
             "goal": goal,
@@ -112,6 +117,7 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
             "today": today,
             "phase": phase,
             "user_comment": (user_comment or "").strip(),
+            "weather": weather or [],
         },
         ensure_ascii=False,
     )
