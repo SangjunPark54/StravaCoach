@@ -29,8 +29,12 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o")
 STATE_REPO = os.environ.get("STATE_REPO", "SangjunPark54/StravaCoach")
 STATE_BRANCH = os.environ.get("STATE_BRANCH", "state")
 STATE_FILE = os.environ.get("STATE_FILE", "user_state.json")
-# 상태 저장 전용 토큰(repo 스코프). 없으면 GITHUB_TOKEN 사용(그 경우 GITHUB_TOKEN이 repo 스코프여야 함).
-GITHUB_STATE_TOKEN = os.environ.get("GITHUB_STATE_TOKEN", "") or GITHUB_TOKEN
+# 상태 저장 전용 토큰(repo 스코프 classic PAT). GITHUB_TOKEN(Copilot/모델 전용)과 반드시 별개.
+# GITHUB_CLASSIC_TOKEN 우선, (하위호환) GITHUB_STATE_TOKEN도 허용. GITHUB_TOKEN으로는 fallback하지 않음.
+GITHUB_STATE_TOKEN = (
+    os.environ.get("GITHUB_CLASSIC_TOKEN", "")
+    or os.environ.get("GITHUB_STATE_TOKEN", "")
+)
 
 HR_MAX = 193
 # 폴백 전용. 실제로는 Strava /zones에서 받아온 존을 우선 사용(analysis.resolve_hr_zones).
