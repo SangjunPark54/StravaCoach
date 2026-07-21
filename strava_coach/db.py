@@ -152,6 +152,45 @@ def set_settings(conn: sqlite3.Connection, values: dict) -> None:
         )
 
 
+# ── 사용자 상태(목표·AI계획)는 push되는 DB 밖 파일에 저장 ──────────────
+# DB(strava_coach.db)는 로컬→HF로 push되므로, 거기에 목표/AI계획을 두면
+# 내 로컬 push가 HF에서 생성한 값을 덮어써(롤백) 버린다. 그래서 이 값들은
+# gitignore·dockerignore된 user_state.json에 따로 저장하고, DB는 폴백(마이그레이션)으로만 읽는다.
+USER_STATE_PATH = DATA_DIR / "user_state.json"
+
+
+def _load_user_state() -> dict:
+    try:
+        return json.loads(USER_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - 파일 없거나 깨졌으면 빈 상태
+        return {}
+
+
+def set_user_values(values: dict) -> None:
+    """목표/AI계획 등 사용자 상태를 user_state.json에 병합 저장."""
+    state = _load_user_state()
+    state.update({k: str(v) for k, v in values.items()})
+    USER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    USER_STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+
+def get_user_value(conn: sqlite3.Connection, key: str) -> Optional[str]:
+    """user_state.json 우선, 없으면 DB sync_state 폴백(기존 값 마이그레이션)."""
+    state = _load_user_state()
+    if key in state:
+        return state[key]
+    return get_state(conn, key)
+
+
+def get_user_settings(conn: sqlite3.Connection) -> dict:
+    """goal_* 설정: user_state.json 우선, 없으면 DB 폴백."""
+    state = _load_user_state()
+    goals = {k: v for k, v in state.items() if k.startswith("goal_")}
+    if goals:
+        return goals
+    return get_settings(conn)
+
+
 def get_sync_anchor(conn: sqlite3.Connection) -> Optional[int]:
     row = conn.execute("SELECT value FROM sync_state WHERE key = 'last_sync_after'").fetchone()
     return int(row["value"]) if row else None

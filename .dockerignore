@@ -3,5 +3,6 @@ __pycache__
 *.pyc
 *.egg-info
 data/strava_tokens.json
+data/user_state.json
 .git
 .DS_Store

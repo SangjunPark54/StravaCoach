@@ -1,5 +1,6 @@
 .env
 data/strava_tokens.json
+data/user_state.json
 __pycache__/
 *.pyc
 .venv/

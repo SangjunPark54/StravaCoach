@@ -830,8 +830,9 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
 
 
 def resolve_goal(conn: sqlite3.Connection) -> dict:
-    """DB에 저장된 목표가 있으면 그것을, 없으면 config 기본값을 반환."""
-    s = db.get_settings(conn)
+    """저장된 목표가 있으면 그것을, 없으면 config 기본값을 반환.
+    (목표는 user_state.json 우선, 없으면 DB 폴백 — DB push로 롤백되지 않게)"""
+    s = db.get_user_settings(conn)
     return {
         "distance_km": float(s.get("goal_distance_km") or GOAL_DISTANCE_KM),
         "pace_sec": int(float(s.get("goal_pace_sec") or GOAL_PACE_SEC_PER_KM)),

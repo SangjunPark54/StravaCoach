@@ -199,7 +199,7 @@ def profile_view(request: Request):
 def plan_view(request: Request):
     ta, plan, goal = _plan_context()
     conn = db.get_connection()
-    saved_raw = db.get_state(conn, "ai_plan")
+    saved_raw = db.get_user_value(conn, "ai_plan")
     saved_plan = json.loads(saved_raw) if saved_raw else None
     return templates.TemplateResponse(
         request,
@@ -236,8 +236,7 @@ def api_coach(comment: str = ""):
         "goal": goal,
         "comment": comment.strip(),
     }
-    db.set_settings(conn, {"ai_plan": json.dumps(payload, ensure_ascii=False)})
-    conn.commit()
+    db.set_user_values({"ai_plan": json.dumps(payload, ensure_ascii=False)})
     return JSONResponse(payload)
 
 
@@ -266,16 +265,13 @@ def set_goal(
     goal_pace_sec: int = Form(...),
     goal_date: str = Form(...),
 ):
-    conn = db.get_connection()
-    db.set_settings(
-        conn,
+    db.set_user_values(
         {
             "goal_distance_km": goal_distance_km,
             "goal_pace_sec": goal_pace_min * 60 + goal_pace_sec,
             "goal_date": goal_date,
-        },
+        }
     )
-    conn.commit()
     return RedirectResponse(url="/plan", status_code=303)
 
 
