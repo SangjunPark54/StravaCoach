@@ -197,7 +197,7 @@ def profile_view(request: Request):
     sessions = _sessions()
     profile = analysis.hr_profile(conn)
     races = analysis.race_predictions(sessions)
-    monthly = analysis.monthly_trends(sessions)
+    monthly = analysis.monthly_trends(sessions, analysis.rel_effort_map(conn))
     prs = analysis.best_efforts_pr(conn)
     stats = analysis.strava_stats(conn)
     fitness = analysis.fitness_freshness(conn)

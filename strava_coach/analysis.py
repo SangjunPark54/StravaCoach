@@ -571,7 +571,7 @@ def best_efforts_pr(conn: sqlite3.Connection) -> list[dict]:
     return out
 
 
-def monthly_trends(sessions: list[dict]) -> list[dict]:
+def monthly_trends(sessions: list[dict], effort_map: Optional[dict] = None) -> list[dict]:
     """월별 누적거리·평균HR·평균페이스(거리 가중)를 정리해 비교용으로 반환(오름차순)."""
     buckets: dict[str, dict] = {}
     for s in sessions:
@@ -588,8 +588,13 @@ def monthly_trends(sessions: list[dict]) -> list[dict]:
         b["km"] += km
         b["n"] += 1
         b["longest"] = max(b["longest"], km)
-        if s.get("suffer_score"):
-            b["effort"] += s["suffer_score"]
+        eff = None
+        if effort_map and s.get("id") in effort_map:
+            eff = effort_map[s["id"]][0]
+        elif s.get("suffer_score"):
+            eff = s["suffer_score"]
+        if eff:
+            b["effort"] += eff
         if s.get("gap_pace_sec") and km:
             b["gap_wsum"] += s["gap_pace_sec"] * km  # 거리 가중 GAP
             b["gap_w"] += km
@@ -696,13 +701,71 @@ def strava_stats(conn: sqlite3.Connection) -> Optional[dict]:
     }
 
 
+def rel_effort_map(conn: sqlite3.Connection) -> dict[int, tuple[float, bool]]:
+    """활동별 Relative Effort 맵 {id: (값, 추정여부)}.
+
+    Strava suffer_score가 있으면 그대로(False). 없는 활동(5·6월 임포트는 Strava에
+    HR이 없어 suffer_score 미제공)은 로컬 HR 스트림으로 Banister TRIMP를 계산하고,
+    suffer_score가 있는 활동들의 (실측/TRIMP) 배율로 보정해 추정(True)한다.
+    """
+    import math
+
+    rest_hr = 60.0  # 안정심박 가정 — 배율 보정이 오차를 흡수
+    hr_max = 0.0
+    acts = db.all_activities(conn)
+    for a in acts:
+        if a["max_heartrate"]:
+            hr_max = max(hr_max, float(a["max_heartrate"]))
+    if hr_max <= rest_hr:
+        hr_max = 190.0
+
+    trimp: dict[int, float] = {}
+    for a in acts:
+        streams = db.streams_for(conn, a["id"])
+        if not streams:
+            continue
+        hr = (streams.get("heartrate") or {}).get("data")
+        tm = (streams.get("time") or {}).get("data")
+        if not hr or not tm or len(hr) != len(tm):
+            continue
+        t = 0.0
+        for i in range(1, len(hr)):
+            h = hr[i]
+            dt = (tm[i] or 0) - (tm[i - 1] or 0)
+            if h is None or not (0 < dt <= 30):
+                continue
+            hrr = max(0.0, min(1.0, (h - rest_hr) / (hr_max - rest_hr)))
+            t += (dt / 60.0) * hrr * 0.64 * math.exp(1.92 * hrr)
+        if t > 0:
+            trimp[a["id"]] = t
+
+    # 실측 suffer_score 있는 활동들로 배율 보정(데이터 기반)
+    s_sum = t_sum = 0.0
+    for a in acts:
+        ss = a["suffer_score"] if "suffer_score" in a.keys() else None
+        if ss and a["id"] in trimp:
+            s_sum += float(ss)
+            t_sum += trimp[a["id"]]
+    k = (s_sum / t_sum) if t_sum > 0 else None
+
+    out: dict[int, tuple[float, bool]] = {}
+    for a in acts:
+        ss = a["suffer_score"] if "suffer_score" in a.keys() else None
+        if ss:
+            out[a["id"]] = (float(ss), False)
+        elif k and a["id"] in trimp:
+            out[a["id"]] = (round(k * trimp[a["id"]], 1), True)
+    return out
+
+
 def fitness_freshness(conn: sqlite3.Connection, today: Optional[date] = None) -> dict:
-    """Relative Effort(suffer_score)로 Fitness(CTL,42d)·Fatigue(ATL,7d)·Form(TSB) 계산.
+    """Relative Effort(suffer_score, 없으면 로컬 HR 추정)로 Fitness(CTL,42d)·Fatigue(ATL,7d)·Form(TSB) 계산.
     Strava Summit의 Fitness & Freshness와 동일한 지수가중이동평균 모델."""
     today = today or date.today()
+    efforts = rel_effort_map(conn)
     daily: dict[str, float] = {}
     for a in db.all_activities(conn):
-        ss = a["suffer_score"] if "suffer_score" in a.keys() else None
+        ss = efforts.get(a["id"], (None, False))[0]
         if a["start_date"] and ss:
             d = a["start_date"][:10]
             daily[d] = daily.get(d, 0.0) + ss
@@ -852,45 +915,11 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
         del r["start"]
     hr_pace_runs.sort(key=lambda r: r["hr"])
 
-    # 심박 보정 페이스 추이: 심박→페이스 회귀 기울기(초/bpm)로 모든 런을
-    # 기준 심박(155bpm) 페이스로 환산 → 시간축에서 체력 추세가 선 하나로 보임.
-    hr_norm = None
-    by_date = sorted(hr_pace_runs, key=lambda r: r["date"])
-    if len(by_date) >= 5:
-        xs = [r["hr"] for r in by_date]
-        ys = [r["pace_sec"] for r in by_date]
-        n = len(xs)
-        sx, sy = sum(xs), sum(ys)
-        sxx = sum(x * x for x in xs)
-        sxy = sum(x * y for x, y in zip(xs, ys))
-        denom = n * sxx - sx * sx
-        slope = (n * sxy - sx * sy) / denom if denom else 0.0
-        ref = 155
-        series = []
-        for r in by_date:
-            adj = r["pace_sec"] + slope * (ref - r["hr"])
-            series.append(
-                {
-                    "date": r["date"],
-                    "adj_pace_sec": round(adj),
-                    "adj_pace_str": format_pace(adj),
-                    "raw_pace_str": r["pace_str"],
-                    "hr": r["hr"],
-                    "distance_km": r["distance_km"],
-                    "latest": r["latest"],
-                }
-            )
-        # 5런 이동평균(추세선)
-        for i, s in enumerate(series):
-            win = [x["adj_pace_sec"] for x in series[max(0, i - 4): i + 1]]
-            s["rolling"] = round(sum(win) / len(win))
-        hr_norm = {"ref": ref, "slope": round(slope, 2), "series": series}
 
     return {
         "zones": zones,
         "hr_pace": hr_pace,
         "hr_pace_runs": hr_pace_runs,
-        "hr_norm": hr_norm,
         "hr_max_observed": round(hr_max_obs) if hr_max_obs else None,
         "total_time_str": format_duration(total_time),
     }

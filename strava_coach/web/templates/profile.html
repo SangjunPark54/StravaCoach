@@ -76,7 +76,7 @@
     <p class="goal-status"><strong>상태:</strong> {{ fitness.status }}
       <span class="muted" style="font-size:0.8rem;">— Fitness=42일 누적부하, Fatigue=7일, Form=Fitness−Fatigue (양수=신선/음수=피로)</span></p>
     <div class="sync-canvas" style="height:220px;"><canvas id="ffChart"></canvas></div>
-    <p class="muted" style="font-size:0.8rem;">※ Relative Effort(심박 기반)가 있는 기간만 계산됩니다(7월~). 데이터가 쌓일수록 정확해집니다.</p>
+    <p class="muted" style="font-size:0.8rem;">※ Relative Effort는 Strava 실측을 우선 사용하고, Strava에 심박이 없는 과거 활동(5·6월 임포트)은 로컬 심박 스트림으로 추정(실측 기준 보정)해 전 기간을 계산합니다.</p>
   </section>
   {% endif %}
 
@@ -157,14 +157,16 @@
     </table>
   </section>
 
-  {% if profile.hr_norm %}
+  {% if profile.hr_pace_runs %}
   <section>
-    <h2>심박 보정 페이스 추이 <span class="muted" style="font-size:0.85rem;font-weight:400;">(모든 런을 심박 {{ profile.hr_norm.ref }}bpm 기준 페이스로 환산 · GAP 경사보정)</span></h2>
+    <h2>심박 · 페이스 추이 <span class="muted" style="font-size:0.85rem;font-weight:400;">(날짜별 · 런 1개=1점 · 페이스는 GAP 경사보정)</span></h2>
     <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
-      심박이 높았던 런은 느리게, 낮았던 런은 빠르게 보정해 <strong>같은 노력(심박 {{ profile.hr_norm.ref }}) 기준</strong>으로 비교합니다.
-      선(5런 이동평균)이 <strong>위로 갈수록 체력 향상</strong>입니다. <span style="color:#1f9d55;font-weight:700;">초록 별</span> = 최근 세션.
+      <span style="color:#fc4c02;font-weight:700;">주황 = 페이스</span>(위로 갈수록 빠름) ·
+      <span style="color:#d92b2b;font-weight:700;">빨강 점선 = 평균 심박</span>.
+      페이스 선은 올라가는데 심박 선이 그대로거나 내려가면 <strong>체력 향상</strong>입니다.
+      <span style="color:#1f9d55;font-weight:700;">초록 별</span> = 최근 세션.
     </p>
-    <canvas id="hrPaceChart" height="90"></canvas>
+    <div class="sync-canvas" style="height:260px;"><canvas id="hrPaceChart"></canvas></div>
   </section>
   {% endif %}
 
@@ -187,33 +189,38 @@
       });
     }
 
-    const HN = {{ (profile.hr_norm.series if profile.hr_norm else []) | tojson }};
-    if (HN && HN.length && document.getElementById('hrPaceChart')) {
-      // 심박 155bpm 환산 페이스를 날짜순으로: 점=각 런, 선=5런 이동평균(체력 추세)
-      const labels = HN.map(r => r.date.slice(5));
+    const HPR = ({{ profile.hr_pace_runs | tojson }}).slice().sort((a,b) => a.date < b.date ? -1 : 1);
+    if (HPR && HPR.length && document.getElementById('hrPaceChart')) {
+      // 날짜 한 줄에 페이스(좌축, 위=빠름)와 심박(우축) 두 선
+      const labels = HPR.map(r => r.date.slice(5));
       new Chart(document.getElementById('hrPaceChart'), {
+        type: 'line',
         data: {
           labels,
           datasets: [
-            { type: 'line', label: '추세(5런 평균)', data: HN.map(r => r.rolling),
-              borderColor: '#1f6fd9', backgroundColor: 'rgba(31,111,217,.07)', fill: true,
-              tension: 0.35, pointRadius: 0, borderWidth: 2.5 },
-            { type: 'scatter', label: '환산 페이스', data: HN.map(r => r.adj_pace_sec),
-              borderColor: '#fc4c02', backgroundColor: HN.map(r => r.latest ? 'rgba(31,157,85,.95)' : 'rgba(252,76,2,.45)'),
-              pointStyle: HN.map(r => r.latest ? 'rectRot' : 'circle'),
-              pointRadius: HN.map(r => r.latest ? 10 : 4.5),
-              pointBorderColor: HN.map(r => r.latest ? '#1f9d55' : '#fc4c02'),
-              pointHoverRadius: 8 },
+            { label: '페이스', yAxisID: 'yPace', data: HPR.map(r => r.pace_sec),
+              borderColor: '#fc4c02', backgroundColor: HPR.map(r => r.latest ? 'rgba(31,157,85,.95)' : 'rgba(252,76,2,.6)'),
+              pointStyle: HPR.map(r => r.latest ? 'rectRot' : 'circle'),
+              pointRadius: HPR.map(r => r.latest ? 9 : 3.5),
+              pointBorderColor: HPR.map(r => r.latest ? '#1f9d55' : '#fc4c02'),
+              tension: 0.3, borderWidth: 2, pointHoverRadius: 7 },
+            { label: '평균 심박', yAxisID: 'yHr', data: HPR.map(r => r.hr),
+              borderColor: '#d92b2b', backgroundColor: 'rgba(217,43,43,.5)', borderDash: [5,4],
+              tension: 0.3, borderWidth: 1.5, pointRadius: 2.5, pointHoverRadius: 6 },
           ],
         },
-        options: { plugins: { legend: { display: false },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
             tooltip: { callbacks: { label: c => {
-              const r = HN[c.dataIndex];
-              if (c.dataset.type === 'line') return '추세 ' + paceFmt(c.parsed.y) + '/km';
-              return `${r.date} · 환산 ${r.adj_pace_str}/km (실제 ${r.raw_pace_str} · HR${r.hr} · ${r.distance_km}km)`;
+              const r = HPR[c.dataIndex];
+              if (c.dataset.yAxisID === 'yHr') return '심박 ' + c.parsed.y + ' bpm';
+              return '페이스 ' + paceFmt(c.parsed.y) + '/km · ' + r.distance_km + 'km' + (r.gap ? ' (GAP)' : '');
             } } } },
-          scales: { x: { ticks: { maxTicksLimit: 10 }, title: { display: true, text: '날짜' } },
-            y: { reverse: true, title: { display: true, text: '155bpm 환산 페이스' }, ticks: { callback: paceFmt } } } },
+          scales: {
+            x: { ticks: { maxTicksLimit: 12 }, title: { display: true, text: '날짜' } },
+            yPace: { position: 'left', reverse: true, title: { display: true, text: '페이스 (위=빠름)' }, ticks: { callback: paceFmt } },
+            yHr: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '심박 (bpm)' } },
+          } },
       });
     }
 
