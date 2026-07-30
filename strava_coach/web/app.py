@@ -3,7 +3,7 @@ import os
 import re
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -354,6 +354,8 @@ def set_goal(
             "goal_distance_km": goal_distance_km,
             "goal_pace_sec": goal_pace_min * 60 + goal_pace_sec,
             "goal_date": goal_date,
+            # 병합(newer-wins) 기준 — 다른 기기의 push가 이 목표를 덮지 않게
+            "goal_updated_at": datetime.now(timezone.utc).isoformat(),
         }
     )
     state_sync.push_state()  # GitHub state 브랜치에 영속화(재시작 보존)

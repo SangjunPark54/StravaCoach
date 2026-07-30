@@ -52,35 +52,50 @@ def _get_remote() -> tuple[dict | None, str | None]:
         return None, j["sha"]
 
 
-def _plan_generated(state: dict) -> str:
-    """user_state의 ai_plan.generated(YYYY-MM-DD) 추출. 없으면 ''."""
-    raw = (state or {}).get("ai_plan")
+def _json_ts(state: dict, key: str, field: str = "generated") -> str:
+    """user_state[key](JSON 문자열)의 타임스탬프 필드 추출. 없으면 ''."""
+    raw = (state or {}).get(key)
     if not raw:
         return ""
     try:
-        return json.loads(raw).get("generated", "") or ""
+        return json.loads(raw).get(field, "") or ""
     except Exception:  # noqa: BLE001
         return ""
 
 
-def pull_state() -> bool:
-    """GitHub state 브랜치의 user_state.json을 로컬에 반영. 성공 시 True.
+_GOAL_KEYS = ("goal_distance_km", "goal_pace_sec", "goal_date", "goal_updated_at")
 
-    newer-wins: 로컬 ai_plan이 원격보다 최신이면 로컬을 보존한다(옛 시드가
-    더 새 계획을 덮어써 롤백되는 것을 방지). 그 외 키는 로컬 우선, 없으면 원격.
+
+def _merge(remote: dict, local: dict) -> dict:
+    """원격/로컬 user_state를 newer-wins로 병합.
+
+    - ai_plan / plan_progress: 내부 generated 날짜가 더 최신인 쪽.
+    - goal_*: goal_updated_at이 더 최신인 쪽(HF에서 바꾼 목표를 로컬 push가 덮지 않게).
+    - 그 외 키: 로컬 우선, 없으면 원격.
     """
+    remote = remote or {}
+    local = local or {}
+    merged = dict(remote)
+    merged.update(local)
+    for key in ("ai_plan", "plan_progress"):
+        if remote.get(key) and _json_ts(remote, key) > _json_ts(local, key):
+            merged[key] = remote[key]
+    if remote.get("goal_updated_at", "") > local.get("goal_updated_at", ""):
+        for k in _GOAL_KEYS:
+            if k in remote:
+                merged[k] = remote[k]
+    return merged
+
+
+def pull_state() -> bool:
+    """GitHub state 브랜치의 user_state.json을 로컬에 병합 반영(newer-wins). 성공 시 True."""
     if not enabled():
         return False
     try:
         remote, _ = _get_remote()
         if not remote:
             return False
-        local = db._load_user_state()
-        merged = dict(remote)          # 원격을 바탕으로
-        merged.update(local)           # 로컬에 있는 값이 우선(런타임 저장분 보존)
-        # ai_plan은 생성일 비교로 더 최신을 채택
-        if _plan_generated(remote) > _plan_generated(local) and remote.get("ai_plan"):
-            merged["ai_plan"] = remote["ai_plan"]
+        merged = _merge(remote, db._load_user_state())
         db.USER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
         db.USER_STATE_PATH.write_text(
             json.dumps(merged, ensure_ascii=False), encoding="utf-8"
@@ -92,17 +107,26 @@ def pull_state() -> bool:
 
 
 def push_state() -> bool:
-    """로컬 user_state.json을 GitHub state 브랜치에 커밋. 성공 시 True."""
+    """로컬 user_state를 원격과 병합(newer-wins) 후 GitHub state 브랜치에 커밋. 성공 시 True.
+
+    병합 없이 로컬을 통째로 밀면 다른 곳(HF/로컬)에서 저장한 최신 값을 덮어버리므로,
+    반드시 원격을 먼저 읽어 병합한 결과를 push하고 로컬에도 반영한다.
+    """
     if not enabled():
         return False
     try:
-        state = db._load_user_state()
-        if not state:
+        local = db._load_user_state()
+        if not local:
             return False
-        content = json.dumps(state, ensure_ascii=False, indent=2)
-        _, sha = _get_remote()  # 현재 sha(업데이트면 필수), 없으면 None(신규 생성)
+        remote, sha = _get_remote()  # sha: 업데이트면 필수, 없으면 None(신규 생성)
+        merged = _merge(remote, local)
+        db.USER_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        db.USER_STATE_PATH.write_text(
+            json.dumps(merged, ensure_ascii=False), encoding="utf-8"
+        )
+        content = json.dumps(merged, ensure_ascii=False, indent=2)
         payload = {
-            "message": "update user_state (goal/ai_plan)",
+            "message": "update user_state (goal/ai_plan/progress)",
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
             "branch": STATE_BRANCH,
         }
