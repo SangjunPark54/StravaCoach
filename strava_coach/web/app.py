@@ -147,9 +147,13 @@ def dashboard(request: Request, range: str = "all"):
 @app.get("/sessions")
 def sessions_view(request: Request, range: str = "all"):
     _maybe_auto_sync()
+    conn = db.get_connection()
     sessions = _sessions()
     filtered = _apply_range(sessions, range)
     total_km = round(sum(s["distance_km"] for s in filtered), 1)
+    progress_raw = db.get_user_value(conn, "plan_progress")
+    progress = json.loads(progress_raw) if progress_raw else None
+    has_plan = bool(db.get_user_value(conn, "ai_plan"))
     return templates.TemplateResponse(
         request,
         "sessions.html",
@@ -160,6 +164,8 @@ def sessions_view(request: Request, range: str = "all"):
             "range": range,
             "range_labels": RANGE_LABELS,
             "month_labels": _month_labels(sessions),
+            "progress": progress,
+            "has_plan": has_plan,
         },
     )
 
@@ -256,6 +262,66 @@ def api_coach(comment: str = ""):
         else "⚠️ GitHub 저장 실패 — GITHUB_STATE_TOKEN(repo 스코프)이 없어 재시작 시 이 계획이 사라질 수 있습니다."
     )
     return JSONResponse(resp)
+
+
+def _progress_days(plan: list, sessions: list[dict]) -> list[dict]:
+    """AI 계획의 날짜별로 실제 세션을 짝지어 경과 비교 데이터를 만든다(코드로 확정, LLM 환각 방지)."""
+    by_date: dict[str, list] = {}
+    for s in sessions:
+        if s["date"]:
+            by_date.setdefault(s["date"], []).append(
+                {
+                    "distance_km": s["distance_km"],
+                    "pace": s["avg_pace_str"],
+                    "avg_hr": s["avg_hr"],
+                    "type": s["type"],
+                }
+            )
+    days = []
+    for p in plan:
+        d = p.get("date") or ""
+        days.append(
+            {
+                "date": d,
+                "planned": {"type": p.get("type"), "title": p.get("title"), "detail": p.get("detail")},
+                "actual": by_date.get(d, []),
+            }
+        )
+    return days
+
+
+@app.get("/api/progress")
+def api_progress():
+    """저장된 AI 계획 대비 실제 세션 경과를 LLM이 평가."""
+    from fastapi.responses import JSONResponse
+
+    conn = db.get_connection()
+    saved_raw = db.get_user_value(conn, "ai_plan")
+    if not saved_raw:
+        return JSONResponse({"error": "저장된 AI 계획이 없습니다. 먼저 '다음 훈련 계획'에서 계획을 생성하세요."})
+    saved = json.loads(saved_raw)
+    plan = saved.get("plan") or []
+    if not plan:
+        return JSONResponse({"error": "저장된 계획에 세션이 없습니다."})
+
+    sessions = _sessions()
+    goal = analysis.resolve_goal(conn)
+    today = date.today()
+    days = _progress_days(plan, sessions)
+    result = coach_llm.plan_progress(days, goal, today.isoformat())
+    if "error" in result:
+        return JSONResponse({"error": result["error"]})
+    payload = {
+        "status": result.get("status", ""),
+        "summary_html": str(render_commentary(result.get("summary", ""))),
+        "advice": result.get("advice", ""),
+        "days": days,
+        "plan_generated": saved.get("generated"),
+        "generated": today.isoformat(),
+    }
+    db.set_user_values({"plan_progress": json.dumps(payload, ensure_ascii=False)})
+    state_sync.push_state()
+    return JSONResponse(payload)
 
 
 @app.get("/api/instant")

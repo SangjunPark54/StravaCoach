@@ -221,6 +221,50 @@ def instant_workout(analysis: dict, fitness: dict, goal: dict, recent_days: list
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+PROGRESS_SYSTEM = (
+    "당신은 러닝 코치입니다. 사용자의 'AI 7일 훈련 계획'과 그 기간의 '실제 수행 기록'을 "
+    "날짜별로 짝지은 데이터(days: 각 항목에 date, planned(계획된 세션 or null), "
+    "actual(실제 뛴 세션 목록, 빈 배열이면 안 뜀))와 goal, today를 받습니다. "
+    "계획 대비 실제 경과를 평가하세요. 반드시 아래 JSON만 출력:\n"
+    '{"status":"on_track|ahead|slightly_behind|behind",'
+    '"summary":"계획 대비 현재 경과를 2~4문장 한국어로(**굵게** 허용). 이행한 세션/건너뛴 세션/'
+    '페이스·거리가 계획과 다른 점을 구체 수치로 언급",'
+    '"advice":"남은 기간(또는 다음 계획)에 대한 실행 조언 1~2문장"}\n'
+    "규칙: 숫자는 반드시 주어진 데이터에서만 인용. rest 계획일에 안 뛴 것은 잘 지킨 것. "
+    "계획일이 모두 지났으면 전체 이행 요약과 다음 주기 조언을 쓰세요. "
+    "planned가 rest가 아닌데 actual이 빈 날은 미이행, actual이 있는데 계획보다 강도/거리가 "
+    "크게 다르면 그 차이를 짚으세요."
+)
+
+
+def plan_progress(days: list, goal: dict, today: str) -> dict:
+    """AI 계획 대비 실제 세션 경과 평가. 실패 시 {'error':...}."""
+    user_content = json.dumps(
+        {"days": days, "goal": goal, "today": today}, ensure_ascii=False
+    )
+    try:
+        if LLM_PROVIDER == "github":
+            if not GITHUB_TOKEN:
+                return {"error": "GITHUB_TOKEN 미설정"}
+            raw = _github_chat(PROGRESS_SYSTEM, user_content, max_tokens=600, json_mode=True)
+        elif LLM_PROVIDER == "anthropic":
+            if not ANTHROPIC_API_KEY:
+                return {"error": "ANTHROPIC_API_KEY 미설정"}
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=ANTHROPIC_API_KEY)
+            resp = client.messages.create(
+                model="claude-sonnet-5", max_tokens=600, system=PROGRESS_SYSTEM,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            raw = "".join(b.text for b in resp.content if b.type == "text")
+        else:
+            return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
+        return _parse_plan(raw)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def generate_commentary(analysis: dict, plan: dict, goal: dict) -> str:
     user_content = _user_content(analysis, plan, goal)
     try:

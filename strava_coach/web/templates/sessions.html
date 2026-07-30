@@ -1,6 +1,70 @@
 {% extends "base.html" %}
 {% block content %}
+  <style>
+    .pg-box { background:#fafafa; border:1px solid #e5e5e5; border-radius:10px; padding:0.9rem 1.1rem; margin:0.8rem 0 1.2rem; }
+    .pg-status { display:inline-block; font-size:0.78rem; font-weight:700; padding:0.2rem 0.6rem; border-radius:999px; margin-right:0.4rem; }
+    .pg-on_track { background:#eaffea; color:#1f7a3a; border:1px solid #bfe6bf; }
+    .pg-ahead { background:#eef4ff; color:#1f4b8c; border:1px solid #cfe0ff; }
+    .pg-slightly_behind { background:#fff4e5; color:#8a5a00; border:1px solid #ffd9a8; }
+    .pg-behind { background:#ffecec; color:#a02020; border:1px solid #f2bcbc; }
+    .pg-days td, .pg-days th { font-size:0.82rem; padding:0.3rem 0.5rem; }
+    .pg-miss { color:#a02020; }
+    .pg-done { color:#1f7a3a; }
+  </style>
+
   <h1>세션 목록 <span class="muted" style="font-size:1rem;font-weight:400;">— {{ total_count }}건 · 누적 {{ total_km }}km</span></h1>
+
+  {% if has_plan %}
+  <section class="pg-box">
+    <h2 style="margin-top:0;">📈 계획 대비 경과 <span class="muted" style="font-size:0.85rem;font-weight:400;">(AI 코치가 저장된 7일 계획 ↔ 실제 세션 비교)</span></h2>
+    <div id="pgResult"><span class="muted">아직 분석 전입니다. 버튼을 눌러 분석하세요.</span></div>
+    <button id="pgBtn" class="replay-btn" style="margin-top:0.6rem;">🤖 경과 분석</button>
+  </section>
+
+  <script>
+    const PG_SAVED = {{ (progress or none) | tojson }};
+    const pgStatusKo = { on_track:'순항 중', ahead:'계획보다 앞섬', slightly_behind:'약간 뒤처짐', behind:'뒤처짐' };
+    function pgRender(d) {
+      let h = '';
+      if (d.status) h += '<span class="pg-status pg-' + d.status + '">' + (pgStatusKo[d.status] || d.status) + '</span>';
+      h += '<span class="muted" style="font-size:0.78rem;">계획 생성 ' + (d.plan_generated||'-') + ' · 분석 ' + (d.generated||'-') + '</span>';
+      if (d.summary_html) h += '<div class="commentary" style="margin-top:0.5rem;">' + d.summary_html + '</div>';
+      if (d.advice) h += '<p class="goal-status" style="margin:0.5rem 0;"><strong>코치 조언:</strong> ' + d.advice + '</p>';
+      if (d.days && d.days.length) {
+        h += '<details style="margin-top:0.4rem;"><summary style="cursor:pointer;font-size:0.85rem;">날짜별 계획 ↔ 실제 보기</summary>';
+        h += '<table class="pg-days"><thead><tr><th>날짜</th><th>계획</th><th>실제</th></tr></thead><tbody>';
+        for (const day of d.days) {
+          const p = day.planned || {};
+          const plannedTxt = '<span class="tag tag-' + (p.type||'easy') + '">' + (p.type||'') + '</span> ' + (p.title||'');
+          let actualTxt;
+          if (day.actual && day.actual.length) {
+            actualTxt = day.actual.map(a => '<span class="pg-done">✔</span> ' + a.distance_km + 'km · ' + (a.pace||'') + (a.avg_hr ? ' · HR' + a.avg_hr : '')).join('<br>');
+          } else {
+            actualTxt = (p.type === 'rest') ? '<span class="pg-done">휴식 ✔</span>' : '<span class="pg-miss">안 뜀</span>';
+          }
+          h += '<tr><td>' + day.date + '</td><td>' + plannedTxt + '</td><td>' + actualTxt + '</td></tr>';
+        }
+        h += '</tbody></table></details>';
+      }
+      document.getElementById('pgResult').innerHTML = h;
+    }
+    if (PG_SAVED && PG_SAVED.summary_html) { pgRender(PG_SAVED); document.getElementById('pgBtn').textContent = '🔄 다시 분석'; }
+    document.getElementById('pgBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('pgBtn');
+      btn.disabled = true; const t = btn.textContent; btn.textContent = '⏳ 분석 중…';
+      try {
+        const r = await fetch('/api/progress');
+        const d = await r.json();
+        if (d.error) throw new Error(d.error);
+        pgRender(d);
+        btn.textContent = '🔄 다시 분석';
+      } catch(e) {
+        document.getElementById('pgResult').innerHTML = '<span style="color:#c0392b">분석 실패: ' + e.message + '</span>';
+        btn.textContent = t;
+      } finally { btn.disabled = false; }
+    });
+  </script>
+  {% endif %}
 
   {% set base = '/sessions' %}
   {% include "_filter.html" %}
