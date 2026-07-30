@@ -852,10 +852,45 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
         del r["start"]
     hr_pace_runs.sort(key=lambda r: r["hr"])
 
+    # 심박 보정 페이스 추이: 심박→페이스 회귀 기울기(초/bpm)로 모든 런을
+    # 기준 심박(155bpm) 페이스로 환산 → 시간축에서 체력 추세가 선 하나로 보임.
+    hr_norm = None
+    by_date = sorted(hr_pace_runs, key=lambda r: r["date"])
+    if len(by_date) >= 5:
+        xs = [r["hr"] for r in by_date]
+        ys = [r["pace_sec"] for r in by_date]
+        n = len(xs)
+        sx, sy = sum(xs), sum(ys)
+        sxx = sum(x * x for x in xs)
+        sxy = sum(x * y for x, y in zip(xs, ys))
+        denom = n * sxx - sx * sx
+        slope = (n * sxy - sx * sy) / denom if denom else 0.0
+        ref = 155
+        series = []
+        for r in by_date:
+            adj = r["pace_sec"] + slope * (ref - r["hr"])
+            series.append(
+                {
+                    "date": r["date"],
+                    "adj_pace_sec": round(adj),
+                    "adj_pace_str": format_pace(adj),
+                    "raw_pace_str": r["pace_str"],
+                    "hr": r["hr"],
+                    "distance_km": r["distance_km"],
+                    "latest": r["latest"],
+                }
+            )
+        # 5런 이동평균(추세선)
+        for i, s in enumerate(series):
+            win = [x["adj_pace_sec"] for x in series[max(0, i - 4): i + 1]]
+            s["rolling"] = round(sum(win) / len(win))
+        hr_norm = {"ref": ref, "slope": round(slope, 2), "series": series}
+
     return {
         "zones": zones,
         "hr_pace": hr_pace,
         "hr_pace_runs": hr_pace_runs,
+        "hr_norm": hr_norm,
         "hr_max_observed": round(hr_max_obs) if hr_max_obs else None,
         "total_time_str": format_duration(total_time),
     }

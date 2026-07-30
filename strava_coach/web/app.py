@@ -192,7 +192,7 @@ def _plan_context():
 
 @app.get("/profile")
 def profile_view(request: Request):
-    _maybe_auto_sync()
+    auto_syncing = _maybe_auto_sync()
     conn = db.get_connection()
     sessions = _sessions()
     profile = analysis.hr_profile(conn)
@@ -206,7 +206,8 @@ def profile_view(request: Request):
         request,
         "profile.html",
         {"profile": profile, "races": races, "monthly": monthly, "prs": prs,
-         "stats": stats, "fitness": fitness, "delta": delta},
+         "stats": stats, "fitness": fitness, "delta": delta,
+         "auto_syncing": auto_syncing},
     )
 
 
