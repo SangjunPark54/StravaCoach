@@ -824,6 +824,7 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
     # 런 단위 점(산점도): 각 러닝의 평균심박 → 평균페이스(GAP 우선).
     #  km 단위 집계는 조깅 후반 심박 드리프트로 왜곡되므로, 런 1개=1점으로 본다.
     hr_pace_runs = []
+    latest_start = ""
     for a in db.all_activities(conn):
         hr = a["average_heartrate"]
         spd = a["average_speed"]
@@ -832,16 +833,23 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
             continue  # 심박/속도 없거나 1.5km 미만 런은 제외
         gap = a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None
         pace = gap or (1000 / spd)
+        start = a["start_date"] or ""
+        latest_start = max(latest_start, start)
         hr_pace_runs.append(
             {
-                "date": (a["start_date"] or "")[:10],
+                "date": start[:10],
+                "start": start,
                 "hr": round(hr),
                 "pace_sec": round(pace),
                 "pace_str": format_pace(pace),
                 "distance_km": round(dist / 1000, 1),
                 "gap": gap is not None,
+                "latest": False,
             }
         )
+    for r in hr_pace_runs:
+        r["latest"] = bool(latest_start) and r["start"] == latest_start
+        del r["start"]
     hr_pace_runs.sort(key=lambda r: r["hr"])
 
     return {
@@ -850,6 +858,75 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
         "hr_pace_runs": hr_pace_runs,
         "hr_max_observed": round(hr_max_obs) if hr_max_obs else None,
         "total_time_str": format_duration(total_time),
+    }
+
+
+def latest_vs_baseline(conn: sqlite3.Connection, baseline_days: int = 45) -> Optional[dict]:
+    """마지막 세션의 심박·페이스가 기존(이전 45일) 대비 어떻게 변했는지 요약.
+
+    - 페이스/심박: 이전 기간 평균과의 차이.
+    - 동일 심박 효율: 이전 런들의 심박→페이스 추세선으로 '이 심박이면 보통 이 페이스'를
+      예측하고, 실제 페이스와의 차이(음수=같은 심박에 더 빠름=효율 향상)를 계산.
+    """
+    runs = []
+    for a in db.all_activities(conn):
+        hr, spd, dist = a["average_heartrate"], a["average_speed"], a["distance_m"]
+        if not hr or not spd or not dist or dist < 1500:
+            continue
+        gap = a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None
+        runs.append({
+            "start": a["start_date"] or "",
+            "date": (a["start_date"] or "")[:10],
+            "name": a["name"],
+            "hr": float(hr),
+            "pace": float(gap or (1000 / spd)),
+            "km": dist / 1000,
+        })
+    if len(runs) < 4:
+        return None
+    runs.sort(key=lambda r: r["start"])
+    latest = runs[-1]
+    cutoff = (date.fromisoformat(latest["date"]) - timedelta(days=baseline_days)).isoformat()
+    base = [r for r in runs[:-1] if r["date"] >= cutoff]
+    if len(base) < 3:
+        base = runs[:-1][-10:]  # 이전 45일이 부족하면 직전 10런
+    n = len(base)
+    avg_pace = sum(r["pace"] for r in base) / n
+    avg_hr = sum(r["hr"] for r in base) / n
+
+    # 이전 런들의 심박→페이스 최소제곱 추세선으로 동일 심박 기대 페이스
+    trend_delta = None
+    hrs = [r["hr"] for r in base]
+    if n >= 5 and (max(hrs) - min(hrs)) >= 8:  # 심박 스프레드가 있어야 기울기 의미 있음
+        sx, sy = sum(hrs), sum(r["pace"] for r in base)
+        sxx = sum(h * h for h in hrs)
+        sxy = sum(r["hr"] * r["pace"] for r in base)
+        denom = n * sxx - sx * sx
+        if denom:
+            slope = (n * sxy - sx * sy) / denom
+            intercept = (sy - slope * sx) / n
+            expected = slope * latest["hr"] + intercept
+            trend_delta = latest["pace"] - expected  # 음수 = 기대보다 빠름(향상)
+
+    pace_delta = latest["pace"] - avg_pace   # 음수 = 평균보다 빠름
+    hr_delta = latest["hr"] - avg_hr         # 음수 = 평균보다 낮은 심박
+    return {
+        "latest": {
+            "date": latest["date"],
+            "name": latest["name"],
+            "km": round(latest["km"], 1),
+            "pace_str": format_pace(latest["pace"]),
+            "hr": round(latest["hr"]),
+        },
+        "baseline": {
+            "n": n,
+            "days": baseline_days,
+            "pace_str": format_pace(avg_pace),
+            "hr": round(avg_hr),
+        },
+        "pace_delta_sec": round(pace_delta),
+        "hr_delta": round(hr_delta),
+        "trend_delta_sec": round(trend_delta) if trend_delta is not None else None,
     }
 
 

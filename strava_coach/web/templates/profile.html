@@ -1,7 +1,49 @@
 {% extends "base.html" %}
 {% block content %}
+  <style>
+    .delta-up { color:#e0503a; }
+    .delta-down { color:#1f9d55; }
+    .delta-neutral { color:#8a6d3b; }
+    .delta-sub { font-size:0.72rem; display:block; font-weight:400; }
+  </style>
   <h1>프로파일 <span class="muted" style="font-size:0.9rem;font-weight:400;">— 전체 세션 데이터 집계</span></h1>
   <p class="muted">누적 심박 기록 시간 {{ profile.total_time_str }}{% if profile.hr_max_observed %} · 관측 최대심박 {{ profile.hr_max_observed }} bpm{% endif %}</p>
+
+  {% if delta %}
+  <section>
+    <h2>🆕 최근 세션 반영 — 심박·페이스 변화 <span class="muted" style="font-size:0.85rem;font-weight:400;">({{ delta.latest.date }} {{ delta.latest.name }} vs 이전 {{ delta.baseline.days }}일 {{ delta.baseline.n }}런)</span></h2>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="stat-label">최근 러닝</div>
+        <div class="stat-val">{{ delta.latest.km }} km<span class="muted delta-sub">{{ delta.latest.pace_str }}/km · HR {{ delta.latest.hr }}</span></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">페이스 변화</div>
+        <div class="stat-val {% if delta.pace_delta_sec < 0 %}delta-down{% elif delta.pace_delta_sec > 0 %}delta-up{% endif %}">
+          {% if delta.pace_delta_sec < 0 %}▼ {{ -delta.pace_delta_sec }}초 빨라짐{% elif delta.pace_delta_sec > 0 %}▲ {{ delta.pace_delta_sec }}초 느려짐{% else %}변화 없음{% endif %}
+          <span class="muted delta-sub">이전 평균 {{ delta.baseline.pace_str }}/km</span>
+        </div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">심박 변화</div>
+        <div class="stat-val {% if delta.hr_delta < 0 %}delta-down{% elif delta.hr_delta > 0 %}delta-neutral{% endif %}">
+          {% if delta.hr_delta < 0 %}▼ {{ -delta.hr_delta }} bpm 낮음{% elif delta.hr_delta > 0 %}▲ {{ delta.hr_delta }} bpm 높음{% else %}동일{% endif %}
+          <span class="muted delta-sub">이전 평균 HR {{ delta.baseline.hr }}</span>
+        </div>
+      </div>
+      {% if delta.trend_delta_sec is not none %}
+      <div class="stat">
+        <div class="stat-label">동일 심박 효율</div>
+        <div class="stat-val {% if delta.trend_delta_sec < 0 %}delta-down{% elif delta.trend_delta_sec > 0 %}delta-up{% endif %}">
+          {% if delta.trend_delta_sec < 0 %}▼ {{ -delta.trend_delta_sec }}초 빠름{% elif delta.trend_delta_sec > 0 %}▲ {{ delta.trend_delta_sec }}초 느림{% else %}추세와 동일{% endif %}
+          <span class="muted delta-sub">HR {{ delta.latest.hr }} 기준 기존 추세 대비</span>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    <p class="muted" style="font-size:0.8rem;">※ 페이스는 GAP(경사보정) 우선. <strong>동일 심박 효율</strong>이 핵심 지표 — 같은 심박에서 더 빠르면(▼) 체력이 향상된 것입니다. 아래 산점도의 <span style="color:#1f9d55;font-weight:700;">초록 별</span>이 최근 세션 위치입니다.</p>
+  </section>
+  {% endif %}
 
   {% if stats %}
   <section>
@@ -138,21 +180,25 @@
 
     const HPR = {{ profile.hr_pace_runs | tojson }};
     if (HPR && HPR.length && document.getElementById('hrPaceChart')) {
-      // 런 1개 = 산점 1개
-      const pts = HPR.map(r => ({ x: r.hr, y: r.pace_sec, date: r.date, dist: r.distance_km, gap: r.gap }));
+      // 런 1개 = 산점 1개 (최근 세션은 초록 별로 강조)
+      const pts = HPR.filter(r => !r.latest).map(r => ({ x: r.hr, y: r.pace_sec, date: r.date, dist: r.distance_km, gap: r.gap }));
+      const latestPts = HPR.filter(r => r.latest).map(r => ({ x: r.hr, y: r.pace_sec, date: r.date, dist: r.distance_km, gap: r.gap }));
       // 최소제곱 추세선(y = a·x + b)
       const n = pts.length;
       const sx = pts.reduce((s,p)=>s+p.x,0), sy = pts.reduce((s,p)=>s+p.y,0);
       const sxx = pts.reduce((s,p)=>s+p.x*p.x,0), sxy = pts.reduce((s,p)=>s+p.x*p.y,0);
       const denom = (n*sxx - sx*sx) || 1;
       const a = (n*sxy - sx*sy)/denom, b = (sy - a*sx)/n;
-      const xmin = Math.min(...pts.map(p=>p.x)), xmax = Math.max(...pts.map(p=>p.x));
+      const allX = pts.concat(latestPts).map(p=>p.x);
+      const xmin = Math.min(...allX), xmax = Math.max(...allX);
       const trend = [{x:xmin, y:a*xmin+b}, {x:xmax, y:a*xmax+b}];
       new Chart(document.getElementById('hrPaceChart'), {
         data: {
           datasets: [
             { type: 'scatter', label: '런', data: pts, borderColor: '#fc4c02',
               backgroundColor: 'rgba(252,76,2,.55)', pointRadius: 5, pointHoverRadius: 7 },
+            { type: 'scatter', label: '최근 세션', data: latestPts, borderColor: '#1f9d55',
+              backgroundColor: 'rgba(31,157,85,.9)', pointStyle: 'rectRot', pointRadius: 10, pointHoverRadius: 12, borderWidth: 2 },
             { type: 'line', label: '추세', data: trend, borderColor: '#1f6fd9',
               borderDash: [5,4], borderWidth: 2, pointRadius: 0, fill: false },
           ],

@@ -201,11 +201,12 @@ def profile_view(request: Request):
     prs = analysis.best_efforts_pr(conn)
     stats = analysis.strava_stats(conn)
     fitness = analysis.fitness_freshness(conn)
+    delta = analysis.latest_vs_baseline(conn)
     return templates.TemplateResponse(
         request,
         "profile.html",
         {"profile": profile, "races": races, "monthly": monthly, "prs": prs,
-         "stats": stats, "fitness": fitness},
+         "stats": stats, "fitness": fitness, "delta": delta},
     )
 
 
