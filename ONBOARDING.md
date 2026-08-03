@@ -1,6 +1,6 @@
 # Strava Coach — 온보딩 가이드
 
-처음부터 끝까지: **① Strava API 셋팅 → ② GitHub Models(GPT-4o) 토큰 → ③ Hugging Face Spaces 배포**.
+처음부터 끝까지: **① Strava API 셋팅 → ② GitHub Copilot 토큰 → ③ Hugging Face Spaces 배포**.
 
 > 이 문서 하나만 따라가면 새 환경/새 계정에서도 앱을 띄울 수 있습니다.
 
@@ -75,26 +75,31 @@ python -m strava_coach backfill-hr /path/to/내보내기.xml
 
 ---
 
-## 2. GitHub Models (GPT-4o) 토큰 — AI 코치용
+## 2. GitHub Copilot 토큰 — AI 코치용
 
-AI 코치(분석·훈련계획)는 **GitHub Models**의 GPT-4o를 씁니다 (OpenAI 호환 API, GitHub PAT로 무료 티어 사용).
+AI 코치(분석·훈련계획)는 **GitHub Copilot 구독**(무료 플랜 포함)의 모델을 씁니다 (OpenAI 호환 API).
+> (구) GitHub Models(GPT-4o 무료 API)는 2026-07-30 서비스 종료되어 더 이상 쓸 수 없습니다.
 
-### 2-1. PAT 발급
-1. https://github.com/settings/tokens 접속
-2. **Generate new token** → 권한(scope)에 **`models:read`** 포함 (Fine-grained면 "Models" 권한 허용)
-3. 생성된 `ghp_...` 토큰 복사
-
-### 2-2. `.env`에 입력
+### 2-1. 1회 디바이스 로그인
+```bash
+python -m strava_coach.copilot_login
 ```
-LLM_PROVIDER=github
-GITHUB_TOKEN=<발급받은 ghp_ 토큰>
+안내되는 https://github.com/login/device 에서 코드를 입력·승인하면 `.env`에
+`GITHUB_COPILOT_TOKEN`(gho_...)이 자동 저장됩니다. 계정에 Copilot이 활성화되어 있어야 합니다
+(https://github.com/settings/copilot 에서 무료 플랜 활성화 가능).
+
+### 2-2. `.env` 구성
+```
+LLM_PROVIDER=copilot
+LLM_MODEL=gpt-4.1
+GITHUB_COPILOT_TOKEN=<copilot_login이 자동 저장>
 # ANTHROPIC_API_KEY=   # provider=anthropic로 바꿀 때만 필요
+# LLM_API_BASE= / LLM_API_KEY=  # 다른 OpenAI 호환 API(Gemini/OpenAI/OpenRouter) 쓸 때
 ```
 
 ### 2-3. 동작 방식 / 참고
-- 엔드포인트: `https://models.inference.ai.azure.com/chat/completions`, 모델 `gpt-4o`
-  (config의 `GITHUB_MODELS_ENDPOINT` / `LLM_MODEL`로 변경 가능)
-- **회사망 주의**: 신규 엔드포인트 `models.github.ai/inference`는 회사 SSL에서 막힐 수 있어 위 Azure 레거시 엔드포인트를 기본값으로 씀.
+- 엔드포인트: `https://api.githubcopilot.com/chat/completions`, 기본 모델 `gpt-4.1`(추가 과금 없는 0x 모델)
+- gho_ 토큰은 매 호출 시 단기 Copilot 토큰으로 자동 교환·캐시됩니다 (`copilot_auth.py`).
 - 토큰이 없으면 AI 코치 버튼만 비활성화되고 **나머지 기능은 정상** 동작합니다.
 
 ---
@@ -135,7 +140,7 @@ push하면 HF가 `Dockerfile`로 자동 빌드(2~3분) 후 앱이 뜹니다.
 
 ### 3-5. Space 시크릿 설정
 Space → **Settings → Variables and secrets**:
-- `GITHUB_TOKEN` = 위 2-1의 GitHub PAT (AI 코치용)
+- `GITHUB_COPILOT_TOKEN` = 위 2-1에서 발급된 gho_ 토큰 (AI 코치용, `.env`에서 복사)
 - (선택) `DATA_DIR=/data` — HF Persistent Storage 사용 시 (목표·AI계획 영구 저장)
 
 ### 앱 주소
@@ -148,7 +153,7 @@ Space → **Settings → Variables and secrets**:
 | `push rejected ... binary files` | DB를 git-lfs로 (3-3의 migrate) |
 | `colorFrom must be one of [red,yellow,...]` | `README.md` frontmatter의 색은 지정된 값만 (orange ❌) |
 | 앱 URL 404 | 빌드 중이거나 Private Space (로그인 필요) |
-| AI 코치 에러 | Space에 `GITHUB_TOKEN` 시크릿 누락 |
+| AI 코치 에러 | Space에 `GITHUB_COPILOT_TOKEN` 시크릿 누락 |
 | 목표/계획이 재시작 후 사라짐 | 구운 DB로 리셋됨 → Persistent Storage + `DATA_DIR=/data` |
 
 ---

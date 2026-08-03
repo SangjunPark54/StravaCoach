@@ -15,13 +15,16 @@ STRAVA_CLIENT_ID = os.environ.get("STRAVA_CLIENT_ID", "")
 STRAVA_CLIENT_SECRET = os.environ.get("STRAVA_CLIENT_SECRET", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
-# LLM 코칭 코멘트 provider. "github"(GitHub Models, GPT-4o) 또는 "anthropic".
-LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "github")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_MODELS_ENDPOINT = os.environ.get(
-    "GITHUB_MODELS_ENDPOINT", "https://models.inference.ai.azure.com"
-)
-LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o")
+# LLM 코칭 provider. "copilot"(기본) / "anthropic" / 그 외(OpenAI 호환 chat/completions).
+# (구) "github"(GitHub Models)는 2026-07-30 서비스 종료 → Copilot 구독(무료 플랜 포함)으로 대체.
+# copilot: 1회 `python -m strava_coach.copilot_login` 실행으로 GITHUB_COPILOT_TOKEN(gho_) 발급.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "copilot")
+GITHUB_COPILOT_TOKEN = os.environ.get("GITHUB_COPILOT_TOKEN", "")
+COPILOT_API_BASE = os.environ.get("COPILOT_API_BASE", "https://api.githubcopilot.com")
+# copilot 외 OpenAI 호환 프로바이더용(예: Gemini/OpenAI/OpenRouter)
+LLM_API_BASE = os.environ.get("LLM_API_BASE", "")
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1")
 
 # ── 사용자 상태(목표·AI계획) GitHub 영속화 ──────────────────────────
 # user_state.json을 GitHub repo의 별도 브랜치에 저장 → HF 재시작에도 보존.

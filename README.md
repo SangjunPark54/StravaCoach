@@ -11,16 +11,16 @@ pinned: false
 # Strava Coach
 
 Strava 러닝 데이터를 분석해 심박존 프로필·구간 그래프·3D 경로 재생과
-목표 기반 훈련 계획(규칙 + GPT-4o 코칭)을 보여주는 로컬/웹 대시보드.
+목표 기반 훈련 계획(규칙 + GitHub Copilot GPT-4.1 코칭)을 보여주는 로컬/웹 대시보드.
 
 ## 기능
 - 세션 목록·대시보드(기간 필터), 활동 상세(1km 스플릿, 랩, 심박·페이스·고도 연동 그래프)
 - 3D 위성/일반맵 경로 재생, 심박 프로필, 5k/10k 예상 페이스
-- 목표 설정, AI 코치(GPT-4o) 분석 + 7일 훈련 계획(저장·영속)
+- 목표 설정, AI 코치(GitHub Copilot GPT-4.1) 분석 + 7일 훈련 계획(저장·영속)
 
 ## 환경변수 (HF Space → Settings → Secrets)
-- `GITHUB_TOKEN` — GitHub Models(GPT-4o) 호출용 (AI 코치 기능). 없으면 코치만 비활성, 나머지는 정상.
-- `LLM_PROVIDER` — 기본 `github` (Docker에 이미 설정됨).
+- `GITHUB_COPILOT_TOKEN` — Copilot 모델 호출용 gho_ 토큰 (`python -m strava_coach.copilot_login`으로 발급). 없으면 코치만 비활성, 나머지는 정상.
+- `LLM_PROVIDER` — 기본 `copilot` (Docker에 이미 설정됨). `LLM_MODEL` 기본 `gpt-4.1`.
 - (선택) `DATA_DIR` — DB 저장 경로. HF 영구 스토리지 사용 시 `/data`로 지정.
 
 ## 로컬 실행

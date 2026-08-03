@@ -2,12 +2,20 @@ import json
 
 import httpx
 
+from . import copilot_auth
 from .config import (
     ANTHROPIC_API_KEY,
-    GITHUB_MODELS_ENDPOINT,
-    GITHUB_TOKEN,
+    COPILOT_API_BASE,
+    GITHUB_COPILOT_TOKEN,
+    LLM_API_BASE,
+    LLM_API_KEY,
     LLM_MODEL,
     LLM_PROVIDER,
+)
+
+_NO_TOKEN_MSG = (
+    "GITHUB_COPILOT_TOKEN 미설정 — GitHub Models 종료(2026-07-30)로 Copilot 경로가 필요합니다. "
+    "`python -m strava_coach.copilot_login`을 실행해 1회 로그인하세요."
 )
 
 SYSTEM_PROMPT = (
@@ -28,8 +36,18 @@ def _user_content(analysis: dict, plan: dict, goal: dict) -> str:
     )
 
 
-def _github_chat(system: str, user_content: str, max_tokens: int = 600, json_mode: bool = False) -> str:
-    """GitHub Models(OpenAI 호환 API)로 GPT-4o 호출."""
+def _openai_chat(system: str, user_content: str, max_tokens: int = 600, json_mode: bool = False) -> str:
+    """OpenAI 호환 chat/completions 호출. copilot 프로바이더는 Copilot 토큰 교환 헤더 사용."""
+    if LLM_PROVIDER in ("copilot", "github"):
+        if not GITHUB_COPILOT_TOKEN:
+            raise RuntimeError(_NO_TOKEN_MSG)
+        base = COPILOT_API_BASE
+        headers = copilot_auth.chat_headers(GITHUB_COPILOT_TOKEN)
+    else:
+        if not LLM_API_KEY:
+            raise RuntimeError("LLM_API_KEY 미설정")
+        base = LLM_API_BASE
+        headers = {"Authorization": f"Bearer {LLM_API_KEY}", "Content-Type": "application/json"}
     payload = {
         "model": LLM_MODEL,
         "max_tokens": max_tokens,
@@ -41,17 +59,13 @@ def _github_chat(system: str, user_content: str, max_tokens: int = 600, json_mod
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
     resp = httpx.post(
-        f"{GITHUB_MODELS_ENDPOINT.rstrip('/')}/chat/completions",
-        headers={"Authorization": f"Bearer {GITHUB_TOKEN}", "Content-Type": "application/json"},
+        f"{base.rstrip('/')}/chat/completions",
+        headers=headers,
         json=payload,
         timeout=90,
     )
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"].strip()
-
-
-def _github_commentary(user_content: str) -> str:
-    return _github_chat(SYSTEM_PROMPT, user_content)
 
 
 def _anthropic_commentary(user_content: str) -> str:
@@ -143,11 +157,7 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
         ensure_ascii=False,
     )
     try:
-        if LLM_PROVIDER == "github":
-            if not GITHUB_TOKEN:
-                return {"error": "GITHUB_TOKEN 미설정"}
-            raw = _github_chat(COACH_SYSTEM, user_content, max_tokens=1200, json_mode=True)
-        elif LLM_PROVIDER == "anthropic":
+        if LLM_PROVIDER == "anthropic":
             if not ANTHROPIC_API_KEY:
                 return {"error": "ANTHROPIC_API_KEY 미설정"}
             from anthropic import Anthropic
@@ -159,7 +169,7 @@ def generate_plan(analysis: dict, goal: dict, recent_days: list, today: str, pha
             )
             raw = "".join(b.text for b in resp.content if b.type == "text")
         else:
-            return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
+            raw = _openai_chat(COACH_SYSTEM, user_content, max_tokens=1200, json_mode=True)
         result = _parse_plan(raw)
         if isinstance(result.get("plan"), list):
             result["plan"] = _enforce_outdoor_weather(result["plan"], weather)
@@ -199,11 +209,7 @@ def instant_workout(analysis: dict, fitness: dict, goal: dict, recent_days: list
         ensure_ascii=False,
     )
     try:
-        if LLM_PROVIDER == "github":
-            if not GITHUB_TOKEN:
-                return {"error": "GITHUB_TOKEN 미설정"}
-            raw = _github_chat(INSTANT_SYSTEM, user_content, max_tokens=500, json_mode=True)
-        elif LLM_PROVIDER == "anthropic":
+        if LLM_PROVIDER == "anthropic":
             if not ANTHROPIC_API_KEY:
                 return {"error": "ANTHROPIC_API_KEY 미설정"}
             from anthropic import Anthropic
@@ -215,7 +221,7 @@ def instant_workout(analysis: dict, fitness: dict, goal: dict, recent_days: list
             )
             raw = "".join(b.text for b in resp.content if b.type == "text")
         else:
-            return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
+            raw = _openai_chat(INSTANT_SYSTEM, user_content, max_tokens=500, json_mode=True)
         return _parse_plan(raw)
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}"}
@@ -243,11 +249,7 @@ def plan_progress(days: list, goal: dict, today: str) -> dict:
         {"days": days, "goal": goal, "today": today}, ensure_ascii=False
     )
     try:
-        if LLM_PROVIDER == "github":
-            if not GITHUB_TOKEN:
-                return {"error": "GITHUB_TOKEN 미설정"}
-            raw = _github_chat(PROGRESS_SYSTEM, user_content, max_tokens=600, json_mode=True)
-        elif LLM_PROVIDER == "anthropic":
+        if LLM_PROVIDER == "anthropic":
             if not ANTHROPIC_API_KEY:
                 return {"error": "ANTHROPIC_API_KEY 미설정"}
             from anthropic import Anthropic
@@ -259,7 +261,7 @@ def plan_progress(days: list, goal: dict, today: str) -> dict:
             )
             raw = "".join(b.text for b in resp.content if b.type == "text")
         else:
-            return {"error": f"알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r}"}
+            raw = _openai_chat(PROGRESS_SYSTEM, user_content, max_tokens=600, json_mode=True)
         return _parse_plan(raw)
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}"}
@@ -268,14 +270,10 @@ def plan_progress(days: list, goal: dict, today: str) -> dict:
 def generate_commentary(analysis: dict, plan: dict, goal: dict) -> str:
     user_content = _user_content(analysis, plan, goal)
     try:
-        if LLM_PROVIDER == "github":
-            if not GITHUB_TOKEN:
-                return "(GITHUB_TOKEN 미설정 — LLM 코칭 코멘트 생략)"
-            return _github_commentary(user_content)
         if LLM_PROVIDER == "anthropic":
             if not ANTHROPIC_API_KEY:
                 return "(ANTHROPIC_API_KEY 미설정 — LLM 코칭 코멘트 생략)"
             return _anthropic_commentary(user_content)
-        return f"(알 수 없는 LLM_PROVIDER={LLM_PROVIDER!r})"
+        return _openai_chat(SYSTEM_PROMPT, user_content)
     except Exception as e:  # noqa: BLE001 - 대시보드가 코멘트 실패로 죽지 않게
         return f"(코칭 코멘트 생성 실패: {type(e).__name__}: {e})"

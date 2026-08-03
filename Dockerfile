@@ -14,7 +14,8 @@ USER user
 ENV HOST=0.0.0.0 \
     PORT=7860 \
     PYTHONUNBUFFERED=1 \
-    LLM_PROVIDER=github
+    LLM_PROVIDER=copilot \
+    LLM_MODEL=gpt-4.1
 
 EXPOSE 7860
 # uvicorn을 직접 실행(__main__의 truststore 주입/포트 env 우회 → HF에서 안정적)
