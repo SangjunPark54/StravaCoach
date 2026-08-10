@@ -807,20 +807,12 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
     """존별 시간(=Strava 계산값)과 존별/심박별 평균페이스를 집계. HR존은 Strava에서 가져옴."""
     zone_bounds = resolve_hr_zones(conn)
 
-    # 1) 존별 체류시간: Strava가 계산한 값을 집계(권위값, 하드코딩 없음)
-    strava_zt: dict[str, float] = {z: 0.0 for z in zone_bounds}
-    have_strava = False
-    for zlist in db.all_zones(conn):
-        zt = zone_time_from_strava(zlist)
-        if zt:
-            have_strava = True
-            for z, t in zt.items():
-                strava_zt[z] = strava_zt.get(z, 0.0) + t
-
-    # 2) 존별/심박별 페이스: 1km 구간 평균으로 짝지어 심박지연·걷기 노이즈 제거
-    #    (초 단위 순간 페이스는 심박 지연/정지로 왜곡되므로 사용하지 않음)
+    # 1+2) 존별 체류시간·페이스: 활동별 하이브리드.
+    #  Strava가 계산한 존 시간이 저장돼 있으면 그것(권위값), 없는 활동
+    #  (프리미엄 종료 후 새 런은 /zones가 402)은 로컬 HR 스트림으로 같은
+    #  존 경계에 대해 직접 계산해 합산 — 새 런도 누락 없이 반영.
+    zone_time: dict[str, float] = {z: 0.0 for z in zone_bounds}
     zone_pace: dict[str, list] = {z: [] for z in zone_bounds}
-    stream_zt: dict[str, float] = {z: 0.0 for z in zone_bounds}
     bin_pace: dict[int, list] = {}
     hr_max_obs = 0
 
@@ -828,15 +820,16 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
         if a["max_heartrate"]:
             hr_max_obs = max(hr_max_obs, a["max_heartrate"])
         streams = db.streams_for(conn, a["id"])
-        if not streams:
-            continue
-        hr = (streams.get("heartrate") or {}).get("data")
-        tm = (streams.get("time") or {}).get("data")
-        dist = (streams.get("distance") or {}).get("data")
-        if not hr or not tm:
-            continue
-        # Strava 존시간이 없을 때만 쓰는 폴백(스트림 기반)
-        if not have_strava:
+        hr = (streams.get("heartrate") or {}).get("data") if streams else None
+        tm = (streams.get("time") or {}).get("data") if streams else None
+        dist = (streams.get("distance") or {}).get("data") if streams else None
+
+        zt = zone_time_from_strava(db.zones_for(conn, a["id"]))
+        if zt:
+            for z, t in zt.items():
+                zone_time[z] = zone_time.get(z, 0.0) + t
+        elif hr and tm:
+            # 이 활동만 스트림 기반 폴백
             for i in range(1, len(hr)):
                 h = hr[i]
                 if h is None:
@@ -845,7 +838,10 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
                 if 0 < dt <= 30:
                     z = hr_zone(h, zone_bounds)
                     if z:
-                        stream_zt[z] += dt
+                        zone_time[z] += dt
+
+        if not hr or not tm:
+            continue
         # 페이스: 1km 구간 평균(심박·페이스를 같은 구간으로 매칭)
         if dist:
             for seg in km_splits(dist, tm, hr, zones=zone_bounds):
@@ -855,7 +851,6 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
                         zone_pace[z].append(seg["pace_sec"])
                     bin_pace.setdefault(int(seg["avg_hr"] // 5 * 5), []).append(seg["pace_sec"])
 
-    zone_time = strava_zt if have_strava else stream_zt
     total_time = sum(zone_time.values())
 
     zones = []
