@@ -58,14 +58,22 @@ def _openai_chat(system: str, user_content: str, max_tokens: int = 600, json_mod
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
-    resp = httpx.post(
-        f"{base.rstrip('/')}/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=90,
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
+    # 큰 계획 생성은 90초를 넘길 때가 있어 read를 길게 잡고, 타임아웃이면 1회 재시도
+    timeout = httpx.Timeout(15.0, read=240.0)
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            resp = httpx.post(
+                f"{base.rstrip('/')}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.RemoteProtocolError) as e:
+            last_exc = e
+    raise last_exc
 
 
 def _anthropic_commentary(user_content: str) -> str:

@@ -95,7 +95,7 @@
     btn.addEventListener('click', async () => {
       btn.disabled = true;
       const orig = btn.textContent;
-      btn.textContent = '⏳ AI 코치 분석 중… (최대 20초)';
+      btn.textContent = '⏳ AI 코치 분석 중… (1~2분 걸릴 수 있어요)';
       out.innerHTML = '';
       try {
         const comment = (document.getElementById('coachComment').value || '').trim();
