@@ -920,6 +920,118 @@ def hr_profile(conn: sqlite3.Connection) -> dict:
     }
 
 
+def temp_profile(conn: sqlite3.Connection) -> Optional[dict]:
+    """온도에 따른 페이스별 심박: 각 런의 기온(러닝 시각 매칭)과
+    '페이스 보정 심박'(HR~페이스 회귀로 기준 페이스 환산)을 계산.
+
+    기온은 Open-Meteo 과거 시간별 데이터에서 런의 로컬 시작~종료 시각 평균.
+    한 번 구한 기온은 DB(sync_state 'run_temps')에 캐시해 재조회 없음.
+    """
+    from . import weather
+
+    runs = []
+    for a in db.all_activities(conn):
+        hr, spd, dist = a["average_heartrate"], a["average_speed"], a["distance_m"]
+        if not hr or not spd or not dist or dist < 1500:
+            continue
+        raw = json.loads(a["raw_json"]) if a["raw_json"] else {}
+        local = (raw.get("start_date_local") or "").rstrip("Z")
+        if not local:
+            continue
+        gap = a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None
+        runs.append({
+            "id": a["id"],
+            "date": local[:10],
+            "hours": sorted({local[:13],
+                             (local[:11] + f"{min(23, int(local[11:13]) + max(0, int((raw.get('elapsed_time') or 0) // 3600))):02d}")}),
+            "hour_start": int(local[11:13]),
+            "hr": float(hr),
+            "pace": float(gap or (1000 / spd)),
+            "km": round(dist / 1000, 1),
+            "start": a["start_date"] or "",
+        })
+    if len(runs) < 6:
+        return None
+
+    # 기온 캐시 로드 → 없는 런만 archive에서 일괄 조회
+    cache_raw = db.get_state(conn, "run_temps")
+    cache: dict[str, float] = json.loads(cache_raw) if cache_raw else {}
+    missing = [r for r in runs if str(r["id"]) not in cache]
+    if missing:
+        temps = weather.hourly_temps(min(r["date"] for r in missing),
+                                     max(r["date"] for r in missing))
+        if temps:
+            for r in missing:
+                vals = [temps[h] for h in r["hours"] if h in temps]
+                if vals:
+                    cache[str(r["id"])] = round(sum(vals) / len(vals), 1)
+            db.set_settings(conn, {"run_temps": json.dumps(cache)})
+            conn.commit()
+
+    pts = [dict(r, temp=cache[str(r["id"])]) for r in runs if str(r["id"]) in cache]
+    if len(pts) < 6:
+        return None
+
+    # 다중회귀 HR ~ 페이스 + 날짜 + 기온: 페이스 효과와 체력 향상 추세(날짜)를
+    # 제거하고 온도 효과만 남긴다. (기온과 체력 향상이 여름에 겹쳐 단순 비교는 왜곡됨)
+    n = len(pts)
+    day0 = min(date.fromisoformat(p["date"]) for p in pts)
+    for p in pts:
+        p["day"] = (date.fromisoformat(p["date"]) - day0).days
+
+    def _solve(A, b):
+        """가우스 소거로 A·x=b 풀기(소규모)."""
+        m = len(b)
+        M = [row[:] + [b[i]] for i, row in enumerate(A)]
+        for col in range(m):
+            piv = max(range(col, m), key=lambda r: abs(M[r][col]))
+            if abs(M[piv][col]) < 1e-12:
+                return None
+            M[col], M[piv] = M[piv], M[col]
+            for r in range(m):
+                if r != col:
+                    f = M[r][col] / M[col][col]
+                    for c2 in range(col, m + 1):
+                        M[r][c2] -= f * M[col][c2]
+        return [M[i][m] / M[i][i] for i in range(m)]
+
+    # 설계행렬 X=[1, pace, day, temp], 정규방정식 (XᵀX)β = Xᵀy
+    feats = [(1.0, p["pace"], float(p["day"]), p["temp"]) for p in pts]
+    ys = [p["hr"] for p in pts]
+    k = 4
+    XtX = [[sum(f[i] * f[j] for f in feats) for j in range(k)] for i in range(k)]
+    Xty = [sum(f[i] * y for f, y in zip(feats, ys)) for i in range(k)]
+    beta = _solve(XtX, Xty)
+    if beta is None:
+        return None
+    _, b_pace, b_day, b_temp = beta
+
+    paces = sorted(p["pace"] for p in pts)
+    ref_pace = paces[n // 2]
+    ref_day = sorted(p["day"] for p in pts)[n // 2]
+
+    latest_start = max(p["start"] for p in pts)
+    out = []
+    for p in pts:
+        # 페이스·날짜 효과 제거 → 온도 효과 + 잔차만 남은 심박
+        hr_adj = p["hr"] - b_pace * (p["pace"] - ref_pace) - b_day * (p["day"] - ref_day)
+        out.append({
+            "date": p["date"],
+            "temp": p["temp"],
+            "hr": round(p["hr"]),
+            "hr_adj": round(hr_adj, 1),
+            "pace_str": format_pace(p["pace"]),
+            "km": p["km"],
+            "latest": p["start"] == latest_start,
+        })
+    out.sort(key=lambda x: x["temp"])
+    return {
+        "ref_pace_str": format_pace(ref_pace),
+        "points": out,
+        "temp_slope": round(b_temp, 2),  # +1°C당 심박 변화(bpm)
+    }
+
+
 def latest_vs_baseline(conn: sqlite3.Connection, baseline_days: int = 45) -> Optional[dict]:
     """마지막 세션의 심박·페이스가 기존(이전 45일) 대비 어떻게 변했는지 요약.
 

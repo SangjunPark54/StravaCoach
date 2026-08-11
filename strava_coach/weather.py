@@ -68,6 +68,31 @@ def _dry_windows(hours: list[tuple]) -> tuple[list[str], str]:
     return [], "예보 없음"
 
 
+def hourly_temps(start_date: str, end_date: str) -> dict[str, float]:
+    """과거 시간별 기온(Open-Meteo archive, 무료·키불요). {'YYYY-MM-DDTHH': °C}."""
+    try:
+        r = httpx.get(
+            "https://archive-api.open-meteo.com/v1/archive",
+            params={
+                "latitude": WEATHER_LAT,
+                "longitude": WEATHER_LON,
+                "start_date": start_date,
+                "end_date": end_date,
+                "hourly": "temperature_2m",
+                "timezone": "Asia/Seoul",
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        h = r.json()["hourly"]
+        return {
+            t[:13]: v for t, v in zip(h["time"], h["temperature_2m"]) if v is not None
+        }
+    except Exception as e:  # noqa: BLE001
+        print(f"[weather] 과거 기온 조회 실패: {type(e).__name__}: {e}")
+        return {}
+
+
 def seoul_forecast(days: int = 7) -> list[dict]:
     """일별 예보 리스트. 각 항목: date, precip_mm, precip_prob, temp_min/max, code, summary, rainy."""
     try:

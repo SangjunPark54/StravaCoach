@@ -170,6 +170,19 @@
   </section>
   {% endif %}
 
+  {% if temp %}
+  <section>
+    <h2>🌡 온도별 심박 <span class="muted" style="font-size:0.85rem;font-weight:400;">(X=러닝 시각 기온 · Y=페이스 보정 심박 · 점=각 런)</span></h2>
+    <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+      페이스가 빠르면 심박이 높아지고, 여름 동안 체력도 좋아졌으므로 <strong>페이스({{ temp.ref_pace_str }}/km 기준)와
+      체력 추세(날짜)를 회귀로 제거</strong>해 온도 효과만 남겼습니다. 파란 점선의 기울기가 더위 민감도 —
+      현재 <strong>+1°C당 {{ '%+.1f'|format(temp.temp_slope) }} bpm</strong>입니다.
+      <span style="color:#1f9d55;font-weight:700;">초록 별</span> = 최근 세션.
+    </p>
+    <div class="sync-canvas" style="height:260px;"><canvas id="tempHrChart"></canvas></div>
+  </section>
+  {% endif %}
+
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     const paceFmt = s => { s = Math.round(s); return Math.floor(s/60) + "'" + String(s%60).padStart(2,'0') + '"'; };
@@ -222,6 +235,35 @@
               : '추세 ' + paceFmt(c.parsed.y) + '/km' } } },
           scales: { x: { type: 'linear', title: { display: true, text: '평균 심박수 (bpm)' } },
             y: { reverse: true, title: { display: true, text: '페이스 (위=빠름)' }, ticks: { callback: paceFmt } } } },
+      });
+    }
+
+    const TP = {{ (temp.points if temp else []) | tojson }};
+    if (TP && TP.length && document.getElementById('tempHrChart')) {
+      // X=기온, Y=페이스 보정 심박 — 온도 민감도
+      const tpts = TP.map(p => ({ x: p.temp, y: p.hr_adj, date: p.date, hr: p.hr, pace: p.pace_str, km: p.km, latest: p.latest }));
+      const tn = tpts.length;
+      const tsx=tpts.reduce((s,p)=>s+p.x,0), tsy=tpts.reduce((s,p)=>s+p.y,0);
+      const tsxx=tpts.reduce((s,p)=>s+p.x*p.x,0), tsxy=tpts.reduce((s,p)=>s+p.x*p.y,0);
+      const tden=(tn*tsxx-tsx*tsx)||1, ta=(tn*tsxy-tsx*tsy)/tden, tb=(tsy-ta*tsx)/tn;
+      const txmin=Math.min(...tpts.map(p=>p.x)), txmax=Math.max(...tpts.map(p=>p.x));
+      new Chart(document.getElementById('tempHrChart'), {
+        data: { datasets: [
+          { type: 'scatter', label: '런', data: tpts,
+            backgroundColor: tpts.map(p => p.latest ? 'rgba(31,157,85,.95)' : 'rgba(224,80,58,.55)'),
+            borderColor: tpts.map(p => p.latest ? '#1f9d55' : '#e0503a'),
+            pointStyle: tpts.map(p => p.latest ? 'rectRot' : 'circle'),
+            pointRadius: tpts.map(p => p.latest ? 10 : 5.5), pointHoverRadius: 9, borderWidth: 1.5 },
+          { type: 'line', label: '추세', data: [{x:txmin,y:ta*txmin+tb},{x:txmax,y:ta*txmax+tb}],
+            borderColor: '#1f6fd9', borderDash: [5,4], borderWidth: 2, pointRadius: 0, fill: false },
+        ] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false },
+            tooltip: { callbacks: { label: c => c.raw.date
+              ? `${c.raw.date} · ${c.raw.x}°C · 보정HR ${c.raw.y} (실제 HR${c.raw.hr} · ${c.raw.pace}/km · ${c.raw.km}km)`
+              : '추세 ' + Math.round(c.parsed.y) + ' bpm' } } },
+          scales: { x: { type: 'linear', title: { display: true, text: '기온 (°C)' } },
+            y: { title: { display: true, text: '페이스 보정 심박 (bpm)' } } } },
       });
     }
 

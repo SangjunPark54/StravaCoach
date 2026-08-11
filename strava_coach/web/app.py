@@ -110,9 +110,21 @@ def _maybe_auto_sync() -> bool:
             c = db.get_connection()
             db.set_settings(c, {"last_auto_sync": str(time.time())})
             c.commit()
-            sync_all()
-        except Exception:
-            pass
+            n = sync_all()
+            db.set_settings(c, {"last_auto_sync_result": f"ok:{n}"})
+            c.commit()
+        except Exception as e:  # noqa: BLE001
+            # 실패를 기록하고 스로틀을 되돌려 다음 페이지 로드에서 바로 재시도되게 함
+            print(f"[auto-sync] 실패: {type(e).__name__}: {e}")
+            try:
+                c = db.get_connection()
+                db.set_settings(c, {
+                    "last_auto_sync_result": f"error:{type(e).__name__}: {e}"[:300],
+                    "last_auto_sync": "0",
+                })
+                c.commit()
+            except Exception:  # noqa: BLE001
+                pass
         finally:
             _sync_lock.release()
 
@@ -123,6 +135,9 @@ def _maybe_auto_sync() -> bool:
 @app.get("/")
 def dashboard(request: Request, range: str = "all"):
     auto_syncing = _maybe_auto_sync()
+    conn = db.get_connection()
+    last_result = db.get_state(conn, "last_auto_sync_result") or ""
+    sync_error = last_result[6:] if last_result.startswith("error:") else None
     sessions = _sessions()
     filtered = _apply_range(sessions, range)
 
@@ -140,6 +155,7 @@ def dashboard(request: Request, range: str = "all"):
             "range_labels": RANGE_LABELS,
             "month_labels": _month_labels(sessions),
             "auto_syncing": auto_syncing,
+            "sync_error": sync_error,
         },
     )
 
@@ -202,11 +218,12 @@ def profile_view(request: Request):
     stats = analysis.strava_stats(conn)
     fitness = analysis.fitness_freshness(conn)
     delta = analysis.latest_vs_baseline(conn)
+    temp = analysis.temp_profile(conn)
     return templates.TemplateResponse(
         request,
         "profile.html",
         {"profile": profile, "races": races, "monthly": monthly, "prs": prs,
-         "stats": stats, "fitness": fitness, "delta": delta,
+         "stats": stats, "fitness": fitness, "delta": delta, "temp": temp,
          "auto_syncing": auto_syncing},
     )
 

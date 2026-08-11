@@ -9,6 +9,10 @@
   <script>setTimeout(function(){ location.href = '/'; }, 25000);</script>
   {% endif %}
 
+  {% if sync_error %}
+  <p class="warning">⚠️ 자동 동기화 실패: <code style="font-size:0.8rem;">{{ sync_error }}</code> — 페이지를 새로고침하면 재시도합니다.</p>
+  {% endif %}
+
   {% set sync = request.query_params.get('sync') %}
   {% if sync == 'ok' %}<p class="warning" style="color:#1f7a3a;background:#eaffea;border:1px solid #bfe6bf;padding:0.6rem 0.9rem;border-radius:8px;">✅ 동기화 완료 — 새 활동 {{ request.query_params.get('n') }}건</p>{% endif %}
   {% if sync == 'error' %}<p class="warning">⚠️ 동기화 실패 — Strava 토큰/네트워크를 확인하세요.</p>{% endif %}
