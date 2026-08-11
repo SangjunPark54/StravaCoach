@@ -68,14 +68,16 @@ def _dry_windows(hours: list[tuple]) -> tuple[list[str], str]:
     return [], "예보 없음"
 
 
-def hourly_temps(start_date: str, end_date: str) -> dict[str, float]:
-    """과거 시간별 기온(Open-Meteo archive, 무료·키불요). {'YYYY-MM-DDTHH': °C}."""
+def hourly_temps(start_date: str, end_date: str,
+                 lat: float | None = None, lon: float | None = None) -> dict[str, float]:
+    """과거 시간별 기온(Open-Meteo archive, 무료·키불요). {'YYYY-MM-DDTHH': °C}.
+    lat/lon을 주면 그 지점(실제 러닝 위치) 기준, 없으면 기본 위치."""
     try:
         r = httpx.get(
             "https://archive-api.open-meteo.com/v1/archive",
             params={
-                "latitude": WEATHER_LAT,
-                "longitude": WEATHER_LON,
+                "latitude": lat if lat is not None else WEATHER_LAT,
+                "longitude": lon if lon is not None else WEATHER_LON,
                 "start_date": start_date,
                 "end_date": end_date,
                 "hourly": "temperature_2m",

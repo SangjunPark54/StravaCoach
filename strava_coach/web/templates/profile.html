@@ -172,7 +172,7 @@
 
   {% if temp %}
   <section>
-    <h2>🌡 온도별 심박 <span class="muted" style="font-size:0.85rem;font-weight:400;">(X=러닝 시각 기온 · Y=페이스 보정 심박 · 점=각 런)</span></h2>
+    <h2>🌡 온도별 심박 <span class="muted" style="font-size:0.85rem;font-weight:400;">(X=실제 뛴 위치·시각의 기온 · Y=페이스 보정 심박 · 점=각 런)</span></h2>
     <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
       페이스가 빠르면 심박이 높아지고, 여름 동안 체력도 좋아졌으므로 <strong>페이스({{ temp.ref_pace_str }}/km 기준)와
       체력 추세(날짜)를 회귀로 제거</strong>해 온도 효과만 남겼습니다. 파란 점선의 기울기가 더위 민감도 —

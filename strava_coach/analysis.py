@@ -939,6 +939,7 @@ def temp_profile(conn: sqlite3.Connection) -> Optional[dict]:
         if not local:
             continue
         gap = a["gap_pace_sec"] if "gap_pace_sec" in a.keys() else None
+        ll = raw.get("start_latlng") or []
         runs.append({
             "id": a["id"],
             "date": local[:10],
@@ -949,23 +950,33 @@ def temp_profile(conn: sqlite3.Connection) -> Optional[dict]:
             "pace": float(gap or (1000 / spd)),
             "km": round(dist / 1000, 1),
             "start": a["start_date"] or "",
+            # 실제 뛴 위치(시작 GPS). 0.05°(~5km) 격자로 묶어 지점별 기상 조회.
+            "loc": (round(ll[0], 2), round(ll[1], 2)) if len(ll) == 2 else None,
         })
     if len(runs) < 6:
         return None
 
-    # 기온 캐시 로드 → 없는 런만 archive에서 일괄 조회
-    cache_raw = db.get_state(conn, "run_temps")
+    # 기온 캐시(v2: 실제 위치 기준) 로드 → 없는 런만 위치 그룹별로 일괄 조회
+    cache_raw = db.get_state(conn, "run_temps_v2")
     cache: dict[str, float] = json.loads(cache_raw) if cache_raw else {}
     missing = [r for r in runs if str(r["id"]) not in cache]
     if missing:
-        temps = weather.hourly_temps(min(r["date"] for r in missing),
-                                     max(r["date"] for r in missing))
-        if temps:
-            for r in missing:
-                vals = [temps[h] for h in r["hours"] if h in temps]
-                if vals:
-                    cache[str(r["id"])] = round(sum(vals) / len(vals), 1)
-            db.set_settings(conn, {"run_temps": json.dumps(cache)})
+        groups: dict = {}
+        for r in missing:
+            groups.setdefault(r["loc"], []).append(r)
+        fetched = False
+        for loc, grp in groups.items():
+            lat, lon = loc if loc else (None, None)  # GPS 없으면 기본 위치
+            temps = weather.hourly_temps(min(r["date"] for r in grp),
+                                         max(r["date"] for r in grp), lat, lon)
+            if temps:
+                for r in grp:
+                    vals = [temps[h] for h in r["hours"] if h in temps]
+                    if vals:
+                        cache[str(r["id"])] = round(sum(vals) / len(vals), 1)
+                        fetched = True
+        if fetched:
+            db.set_settings(conn, {"run_temps_v2": json.dumps(cache)})
             conn.commit()
 
     pts = [dict(r, temp=cache[str(r["id"])]) for r in runs if str(r["id"]) in cache]
