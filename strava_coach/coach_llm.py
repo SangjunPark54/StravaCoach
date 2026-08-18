@@ -275,6 +275,51 @@ def plan_progress(days: list, goal: dict, today: str) -> dict:
         return {"error": f"{type(e).__name__}: {e}"}
 
 
+REVIEW_SYSTEM = (
+    "당신은 데이터 기반 러닝 코치입니다. comparison(최근 recent_days일 vs 그 이전 base_days일의 "
+    "훈련 지표: 주간거리·평균/GAP 페이스·평균심박·타입 분포·롱런·최고페이스, delta는 recent-baseline, "
+    "delta.same_hr_pace_sec는 '동일 심박에서의 페이스 변화'로 음수면 같은 심박에 더 빨라진 것=체력 향상), "
+    "recent_sessions(최근 세션 목록), fitness(현재 Fitness/Fatigue/Form), goal, today를 받습니다. "
+    "반드시 아래 JSON만 출력:\n"
+    '{"verdict":"improving|maintaining|declining|overreaching",'
+    '"headline":"한 줄 총평(한국어, 15자 내외)",'
+    '"performance":"기존 훈련 대비 성과를 3~5문장 한국어로(**굵게** 허용). 반드시 delta의 실제 수치를 인용: '
+    '주간거리 변화, 페이스/GAP 변화, 심박 변화, 동일 심박 효율 변화, 세션 구성 변화",'
+    '"strengths":["잘된 점 1~3개, 각각 수치 근거 포함"],'
+    '"concerns":["주의/우려 0~3개, 각각 수치 근거 포함"],'
+    '"recommendations":["앞으로 고려할 것 3~5개: 볼륨/강도/회복/세션 구성/목표 대비 구체 조언, 각 1~2문장"]}\n'
+    "규칙: 숫자는 주어진 데이터에서만 인용하고 없는 수치를 만들지 마세요. "
+    "주간거리가 급증(+30%↑)했거나 Form이 크게 음수면 overreaching/회복을 우선 언급. "
+    "same_hr_pace_sec가 음수면 체력 향상으로 명확히 평가하고, 양수면 피로/더위/컨디션 가능성을 짚으세요. "
+    "goal(거리·목표페이스·날짜)까지 남은 기간을 고려해 recommendations를 구성하세요."
+)
+
+
+def session_review(comparison: dict, fitness: dict | None, goal: dict, today: str) -> dict:
+    """세션 데이터로 기존 훈련 대비 성과 평가 + 앞으로 고려할 것 추천. 실패 시 {'error':...}."""
+    user_content = json.dumps(
+        {"comparison": comparison, "fitness": fitness, "goal": goal, "today": today},
+        ensure_ascii=False,
+    )
+    try:
+        if LLM_PROVIDER == "anthropic":
+            if not ANTHROPIC_API_KEY:
+                return {"error": "ANTHROPIC_API_KEY 미설정"}
+            from anthropic import Anthropic
+
+            client = Anthropic(api_key=ANTHROPIC_API_KEY)
+            resp = client.messages.create(
+                model="claude-sonnet-5", max_tokens=1000, system=REVIEW_SYSTEM,
+                messages=[{"role": "user", "content": user_content}],
+            )
+            raw = "".join(b.text for b in resp.content if b.type == "text")
+        else:
+            raw = _openai_chat(REVIEW_SYSTEM, user_content, max_tokens=1000, json_mode=True)
+        return _parse_plan(raw)
+    except Exception as e:  # noqa: BLE001
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def generate_commentary(analysis: dict, plan: dict, goal: dict) -> str:
     user_content = _user_content(analysis, plan, goal)
     try:

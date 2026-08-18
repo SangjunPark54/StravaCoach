@@ -170,6 +170,8 @@ def sessions_view(request: Request, range: str = "all"):
     progress_raw = db.get_user_value(conn, "plan_progress")
     progress = json.loads(progress_raw) if progress_raw else None
     has_plan = bool(db.get_user_value(conn, "ai_plan"))
+    review_raw = db.get_user_value(conn, "session_review")
+    review = json.loads(review_raw) if review_raw else None
     return templates.TemplateResponse(
         request,
         "sessions.html",
@@ -182,6 +184,7 @@ def sessions_view(request: Request, range: str = "all"):
             "month_labels": _month_labels(sessions),
             "progress": progress,
             "has_plan": has_plan,
+            "review": review,
         },
     )
 
@@ -339,6 +342,37 @@ def api_progress():
         "generated": today.isoformat(),
     }
     db.set_user_values({"plan_progress": json.dumps(payload, ensure_ascii=False)})
+    state_sync.push_state()
+    return JSONResponse(payload)
+
+
+@app.get("/api/review")
+def api_review():
+    """세션 데이터로 기존 훈련 대비 성과 평가 + 앞으로 고려할 것 추천(AI)."""
+    from fastapi.responses import JSONResponse
+
+    conn = db.get_connection()
+    sessions = _sessions()
+    goal = analysis.resolve_goal(conn)
+    today = date.today()
+    comparison = analysis.period_comparison(sessions, today)
+    if comparison["recent"]["sessions"] == 0:
+        return JSONResponse({"error": f"최근 {comparison['recent_days']}일 세션이 없어 비교할 수 없습니다."})
+    fitness = analysis.fitness_freshness(conn).get("current")
+    result = coach_llm.session_review(comparison, fitness, goal, today.isoformat())
+    if "error" in result:
+        return JSONResponse({"error": result["error"]})
+    payload = {
+        "verdict": result.get("verdict", ""),
+        "headline": result.get("headline", ""),
+        "performance_html": str(render_commentary(result.get("performance", ""))),
+        "strengths": result.get("strengths") or [],
+        "concerns": result.get("concerns") or [],
+        "recommendations": result.get("recommendations") or [],
+        "comparison": {k: comparison[k] for k in ("recent_days", "base_days", "recent", "baseline", "delta")},
+        "generated": today.isoformat(),
+    }
+    db.set_user_values({"session_review": json.dumps(payload, ensure_ascii=False)})
     state_sync.push_state()
     return JSONResponse(payload)
 

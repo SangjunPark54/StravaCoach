@@ -1070,6 +1070,96 @@ def temp_profile(conn: sqlite3.Connection) -> Optional[dict]:
     }
 
 
+def period_comparison(sessions: list[dict], today: Optional[date] = None,
+                      recent_days: int = 14, base_days: int = 42) -> dict:
+    """최근 기간 vs 그 이전 기간의 훈련 지표 비교(코드로 확정 — LLM 환각 방지).
+
+    recent: 오늘-14일 ~ 오늘, baseline: 그 이전 42일. 각 기간의 주간거리·페이스·
+    GAP·심박·타입 분포·롱런·세션수와, 동일 심박 효율(HR~pace 회귀) 델타를 계산.
+    """
+    today = today or date.today()
+    r_start = today - timedelta(days=recent_days)
+    b_start = r_start - timedelta(days=base_days)
+
+    def bucket(lo: date, hi: date):
+        return [s for s in sessions if s["date"] and lo.isoformat() <= s["date"] < hi.isoformat()]
+
+    def agg(rows: list[dict], days: int) -> dict:
+        km = sum(s["distance_km"] or 0 for s in rows)
+        w = days / 7
+        wt = sum((s["avg_pace"] or 0) * (s["distance_km"] or 0) for s in rows if s["avg_pace"])
+        wd = sum(s["distance_km"] or 0 for s in rows if s["avg_pace"])
+        # GAP 없는 런(프리미엄 종료 후 Strava가 미제공)은 실제 페이스로 폴백 — 비교에서 빠지지 않게
+        gt = sum((s.get("gap_pace_sec") or s["avg_pace"] or 0) * (s["distance_km"] or 0)
+                 for s in rows if (s.get("gap_pace_sec") or s["avg_pace"]))
+        gd = sum(s["distance_km"] or 0 for s in rows if (s.get("gap_pace_sec") or s["avg_pace"]))
+        ht = sum((s["avg_hr"] or 0) * (s["distance_km"] or 0) for s in rows if s["avg_hr"])
+        hd = sum(s["distance_km"] or 0 for s in rows if s["avg_hr"])
+        types: dict[str, int] = {}
+        for s in rows:
+            types[s["type"]] = types.get(s["type"], 0) + 1
+        longest = max((s["distance_km"] or 0 for s in rows), default=0)
+        best = min((s["avg_pace"] for s in rows if s["avg_pace"] and (s["distance_km"] or 0) >= 2), default=None)
+        return {
+            "sessions": len(rows),
+            "total_km": round(km, 1),
+            "weekly_km": round(km / w, 1) if w else 0,
+            "avg_pace_sec": round(wt / wd) if wd else None,
+            "avg_pace_str": format_pace(wt / wd) if wd else None,
+            "gap_pace_sec": round(gt / gd) if gd else None,
+            "gap_pace_str": format_pace(gt / gd) if gd else None,
+            "avg_hr": round(ht / hd, 1) if hd else None,
+            "longest_km": round(longest, 1),
+            "best_pace_str": format_pace(best) if best else None,
+            "type_counts": types,
+        }
+
+    recent_rows = bucket(r_start, today + timedelta(days=1))
+    base_rows = bucket(b_start, r_start)
+    recent = agg(recent_rows, recent_days)
+    base = agg(base_rows, base_days)
+
+    # 동일 심박 효율: baseline 런들의 HR→GAP페이스 회귀로 recent 각 런의 기대 페이스 계산
+    eff_delta = None
+    pts = [(s["avg_hr"], s.get("gap_pace_sec") or s["avg_pace"]) for s in base_rows
+           if s["avg_hr"] and (s.get("gap_pace_sec") or s["avg_pace"]) and (s["distance_km"] or 0) >= 1.5]
+    if len(pts) >= 5:
+        n = len(pts)
+        sx = sum(p[0] for p in pts); sy = sum(p[1] for p in pts)
+        sxx = sum(p[0] ** 2 for p in pts); sxy = sum(p[0] * p[1] for p in pts)
+        den = n * sxx - sx * sx
+        if den:
+            slope = (n * sxy - sx * sy) / den
+            inter = (sy - slope * sx) / n
+            ds = [((s.get("gap_pace_sec") or s["avg_pace"]) - (slope * s["avg_hr"] + inter))
+                  for s in recent_rows if s["avg_hr"] and (s.get("gap_pace_sec") or s["avg_pace"]) and (s["distance_km"] or 0) >= 1.5]
+            if ds:
+                eff_delta = round(sum(ds) / len(ds))  # 음수 = 같은 심박에 더 빠름(향상)
+
+    def delta(a, b):
+        return None if a is None or b is None else round(a - b, 1)
+
+    return {
+        "recent_days": recent_days,
+        "base_days": base_days,
+        "recent": recent,
+        "baseline": base,
+        "delta": {
+            "weekly_km": delta(recent["weekly_km"], base["weekly_km"]),
+            "avg_pace_sec": delta(recent["avg_pace_sec"], base["avg_pace_sec"]),
+            "gap_pace_sec": delta(recent["gap_pace_sec"], base["gap_pace_sec"]),
+            "avg_hr": delta(recent["avg_hr"], base["avg_hr"]),
+            "same_hr_pace_sec": eff_delta,
+        },
+        "recent_sessions": [
+            {"date": s["date"], "km": s["distance_km"], "pace": s["avg_pace_str"],
+             "gap": format_pace(s["gap_pace_sec"]) if s.get("gap_pace_sec") else None,
+             "hr": s["avg_hr"], "max_hr": s["max_hr"], "type": s["type"], "zone": s["hr_zone"]}
+            for s in recent_rows
+        ],
+    }
+
+
 def latest_vs_baseline(conn: sqlite3.Connection, baseline_days: int = 45) -> Optional[dict]:
     """마지막 세션의 심박·페이스가 기존(이전 45일) 대비 어떻게 변했는지 요약.
 
