@@ -538,36 +538,63 @@ _PR_ORDER = ["400m", "1/2 mile", "1K", "1 mile", "2 mile", "5K", "10K",
              "15K", "10 mile", "20K", "Half-Marathon", "Marathon"]
 
 
-def best_efforts_pr(conn: sqlite3.Connection) -> list[dict]:
-    """전 활동의 best_efforts를 모아 거리별 실제 최고기록(PR)을 산출."""
+def best_efforts_pr(conn: sqlite3.Connection, recent_days: int = 30,
+                    today: Optional[date] = None) -> list[dict]:
+    """거리별 통산 최고기록(PR)과 최근 기간 최고기록을 함께 산출.
+
+    PR만 보면 최근 기록이 PR을 못 깼을 때 '갱신이 안 되는 것'처럼 보이므로,
+    최근 recent_days일 내 최고기록과 PR 대비 격차를 함께 반환한다.
+    """
+    today = today or date.today()
+    cutoff = (today - timedelta(days=recent_days)).isoformat()
+
     best: dict[str, dict] = {}
+    recent_best: dict[str, dict] = {}
     for a in db.all_activities(conn):
         raw = a["best_efforts"] if "best_efforts" in a.keys() else None
         if not raw:
             continue
+        d = a["start_date"][:10] if a["start_date"] else None
         for e in json.loads(raw):
             name, t, dist = e.get("name"), e.get("elapsed_time"), e.get("distance")
             if not name or not t:
                 continue
+            entry = {"time": t, "distance": dist, "date": d, "activity_id": a["id"]}
             if name not in best or t < best[name]["time"]:
-                best[name] = {
-                    "time": t,
-                    "distance": dist,
-                    "date": a["start_date"][:10] if a["start_date"] else None,
-                    "activity_id": a["id"],
-                }
+                best[name] = entry
+            if d and d >= cutoff and (name not in recent_best or t < recent_best[name]["time"]):
+                recent_best[name] = entry
+
     ordered = [n for n in _PR_ORDER if n in best] + [n for n in best if n not in _PR_ORDER]
     out = []
     for name in ordered:
         b = best[name]
         pace = (b["time"] / (b["distance"] / 1000)) if b["distance"] else None
-        out.append({
+        r = recent_best.get(name)
+        row = {
             "name": name,
             "time_str": format_duration(b["time"]),
             "pace_str": format_pace(pace),
             "date": b["date"],
             "activity_id": b["activity_id"],
-        })
+            "recent_time_str": None,
+            "recent_pace_str": None,
+            "recent_date": None,
+            "recent_activity_id": None,
+            "recent_gap_s": None,   # 최근 최고가 PR보다 느린 초(0이면 최근이 곧 PR)
+            "is_recent_pr": False,
+        }
+        if r:
+            rpace = (r["time"] / (r["distance"] / 1000)) if r["distance"] else None
+            row.update({
+                "recent_time_str": format_duration(r["time"]),
+                "recent_pace_str": format_pace(rpace),
+                "recent_date": r["date"],
+                "recent_activity_id": r["activity_id"],
+                "recent_gap_s": round(r["time"] - b["time"]),
+                "is_recent_pr": r["time"] <= b["time"],
+            })
+        out.append(row)
     return out
 
 

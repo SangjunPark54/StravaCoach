@@ -97,9 +97,13 @@
 
   {% if prs %}
   <section>
-    <h2>🏆 최고 기록 (PR) <span class="muted" style="font-size:0.85rem;font-weight:400;">(Strava best efforts · 실제 기록)</span></h2>
+    <h2>🏆 최고 기록 (PB/PR) <span class="muted" style="font-size:0.85rem;font-weight:400;">(Strava best efforts · 통산 최고 vs 최근 30일 최고)</span></h2>
+    <p class="muted" style="font-size:0.82rem;margin:0.2rem 0 0.6rem;">
+      통산 기록이 그대로여도 <strong>최근 30일 최고</strong> 열로 현재 실력과 갱신 여부를 확인할 수 있습니다.
+      <span style="color:#1f9d55;font-weight:700;">🏆</span> = 최근 기록이 곧 통산 PB · 괄호는 PB까지 남은 시간.
+    </p>
     <table>
-      <thead><tr><th>구간</th><th>기록</th><th>페이스</th><th>달성일</th></tr></thead>
+      <thead><tr><th>구간</th><th>통산 최고(PB)</th><th>페이스</th><th>달성일</th><th>최근 30일 최고</th></tr></thead>
       <tbody>
         {% for p in prs %}
         <tr>
@@ -107,6 +111,15 @@
           <td>{{ p.time_str }}</td>
           <td>{{ p.pace_str }}/km</td>
           <td><a href="/activity/{{ p.activity_id }}">{{ p.date }}</a></td>
+          <td>
+            {% if p.recent_time_str %}
+              {% if p.is_recent_pr %}<span style="color:#1f9d55;font-weight:700;">🏆 {{ p.recent_time_str }}</span>
+              {% else %}{{ p.recent_time_str }} <span class="muted" style="font-size:0.78rem;">(+{{ p.recent_gap_s }}초)</span>{% endif %}
+              <span class="muted" style="font-size:0.75rem;display:block;">
+                {{ p.recent_pace_str }}/km · <a href="/activity/{{ p.recent_activity_id }}">{{ p.recent_date }}</a>
+              </span>
+            {% else %}<span class="muted">-</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
